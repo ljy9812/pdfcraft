@@ -1,0 +1,41 @@
+[package]
+name = "pdfcraft-ohos"
+description = "OpenHarmony napi entry for the PdfCraft egui shell (ohos-craft-p2)"
+version.workspace = true
+license.workspace = true
+# Pinned to 2021 rather than the workspace's 2024: the napi-ohos 1.2.0 module
+# registration codegen uses bare `#[no_mangle]`/`#[link_section]`, which Rust
+# 2024 turns into hard errors (unsafe attributes), and the frame-spike
+# blueprint this crate ports is proven on the 2021 face (ohos-winit p1).
+edition = "2021"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+# Every dependency sits behind the ohos target gate: the host face of this
+# crate is an empty lib (crate-level `#![cfg(target_env = "ohos")]`), so host
+# builds compile nothing but the build script.
+[target.'cfg(target_env = "ohos")'.dependencies]
+pdfcraft-ui-egui = { workspace = true }
+# eframe feature face identical to frame-spike (ohos-winit p1): default_fonts +
+# both renderers (wgpu primary, glow fallback). The workspace dep already sets
+# default-features = false, which keeps eframe 0.36's desktop-Linux cfg gates
+# (wayland/x11) dormant on ohos (ohos-craft-p2 D4: zero-patch eframe chain).
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "glow"] }
+# The ohos platform bits of the entry: `OhosPump` + `with_openharmony_app`
+# builder hooks, resolved to vendor/winit by the workspace [patch.crates-io].
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+openharmony-ability = { path = "../../vendor/openharmony-ability/crates/ability" }
+openharmony-ability-derive = { path = "../../vendor/openharmony-ability/crates/derive" }
+napi-ohos = "=1.2.0"
+napi-derive-ohos = "=1.2.0"
+# hilog bridge: log records -> hilog (frame-spike LogForwarder pattern).
+ohos-hilog-binding = "=0.2.4"
+tracing = "0.1"
+log = { workspace = true }
+
+[build-dependencies]
+napi-build-ohos = "=1.2.0"

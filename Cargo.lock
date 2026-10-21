@@ -4163,6 +4163,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "openharmony-ability-derive"
+version = "1.0.0-beta.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4566,6 +4575,23 @@ dependencies = [
  "pdfcraft-fonts",
  "rten",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pdfcraft-ohos"
+version = "0.10.1"
+dependencies = [
+ "eframe",
+ "log",
+ "napi-build-ohos",
+ "napi-derive-ohos",
+ "napi-ohos",
+ "ohos-hilog-binding",
+ "openharmony-ability",
+ "openharmony-ability-derive",
+ "pdfcraft-ui-egui",
+ "tracing",
+ "winit",
 ]
 
 [[package]]
