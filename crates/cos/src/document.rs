@@ -5,6 +5,13 @@
 //! Edits never touch the original bytes; the writer appends them (incremental save) or rewrites
 //! the file (full save).
 
+// clippy 1.95 false positive: `missing_const_for_thread_local` flags the `thread_local!` below —
+// but making `LENGTHS` const does not compile on this toolchain (`HashMap::new` is not
+// const-callable, E0015), and `LOADING` is `const`-initialized already. The lint is emitted
+// inside std's macro expansion (span in `thread/local.rs`), which an `#[allow]` forwarded to the
+// generated static did not reach, so the allow sits at module level.
+#![allow(clippy::missing_const_for_thread_local)]
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 
