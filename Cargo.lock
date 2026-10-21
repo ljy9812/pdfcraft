@@ -4732,6 +4732,7 @@ dependencies = [
  "png 0.18.1",
  "pollster 1.0.1",
  "rfd",
+ "rfd-ohos",
  "rustix 1.1.5",
  "serde",
  "serde_json",
@@ -5606,6 +5607,13 @@ dependencies = [
  "wayland-protocols",
  "web-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rfd-ohos"
+version = "0.17.2"
+dependencies = [
+ "log",
 ]
 
 [[package]]
