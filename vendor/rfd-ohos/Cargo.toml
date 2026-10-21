@@ -1,0 +1,24 @@
+# rfd-ohos — 本地 no-op stub(非上游 vendoring;ohos-craft-p2 设计 G1)。
+#
+# rfd 0.17 无 OpenHarmony 后端,而 ui-egui 无条件依赖它(AsyncFileDialog
+# 调用点 43 处/builder 调用 69 处/18 文件)。ohos 面经依赖键 package 重命名
+# 以 `rfd` 名义消费本 crate(`rfd = { package = "rfd-ohos", path = … }`),
+# `use rfd::…` 调用点零改动;全部 dialog 请求返回 None(用户取消语义)+ 一条
+# log 通知。文件打开经 `open_bytes` 内存路径进应用(设计 D6/D7)。
+[package]
+name = "rfd-ohos"
+version = "0.17.2" # 镜像被 stub 的上游版本,仅作文档标识
+edition = "2021"
+publish = false
+
+[features]
+# ui-egui 的目标面以 `features = ["file-handle-inner"]` 声明 rfd 依赖,stub
+# 必须携带同名(空)feature 才能作为 drop-in 编译。上游用它暴露 FileHandle
+# 内部——stub 无内部可暴露。
+file-handle-inner = []
+
+[dependencies]
+# `log` 而非 `tracing`:ohos 入口 crate 经 LogForwarder 桥接 log 记录到
+# hilog(frame-spike 既定模式),stub 通知零额外接线即上设备;未装 logger
+# 的 host 测试运行中宏为 no-op。
+log = "0.4"

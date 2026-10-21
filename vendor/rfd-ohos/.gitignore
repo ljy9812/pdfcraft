@@ -1,0 +1,5 @@
+# standalone 测试运行产物(target/ 与本地 lock)。上游 lib 约定:库 crate
+# 不提交 Cargo.lock——被 pdfcraft workspace 以 path dep 消费时由 workspace
+# lock 管辖,本目录 lock 仅 standalone `cargo test` 生成(设计 78 行)。
+/target
+/Cargo.lock
