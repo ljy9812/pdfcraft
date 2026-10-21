@@ -53,10 +53,14 @@ static INPUT_FORWARDER: OnceLock<OhosInputForwarder> = OnceLock::new();
 /// semantics.
 static INPUT_SCALE: OnceLock<f32> = OnceLock::new();
 
-/// The embedded sample PDF (design D6): the ui-egui UI-test fixture, opened
-/// at construction so the first screen proves the real hayro→vello_cpu→
-/// texture pipeline (SC3 first-screen evidence), not just an empty shell.
-const SAMPLE_PDF: &[u8] = include_bytes!("../../../crates/ui-egui/tests/data/form.pdf");
+/// The embedded sample PDF (design D6): a content-rich two-page vector
+/// fixture, opened at construction so the first screen proves the real
+/// hayro→vello_cpu→texture pipeline with visible ink (SC3 first-screen
+/// evidence), not just an empty shell. (The earlier choice — the ui-egui
+/// form-field test PDF — renders a legitimately blank page: its only page
+/// has no content stream and its annotation appearance streams are empty,
+/// so it cannot carry visual evidence even though it opens fine.)
+const SAMPLE_PDF: &[u8] = include_bytes!("../tests/data/sample-content.pdf");
 
 /// Ability entry (pump producer side): install the event pump synchronously
 /// — openharmony-ability does not queue events, so the relay must be
@@ -302,7 +306,7 @@ fn native_options(
 /// the shell still renders, and the error line is the diagnosis.
 fn new_app_with_sample_pdf() -> PdfCraftApp {
     let mut app = PdfCraftApp::new();
-    if let Err(error) = app.open_bytes("form.pdf", None, SAMPLE_PDF.to_vec()) {
+    if let Err(error) = app.open_bytes("sample-content.pdf", None, SAMPLE_PDF.to_vec()) {
         hilog_error!(format!("[worker] embedded sample PDF failed to open: {error}").as_str());
     }
     app
@@ -491,11 +495,11 @@ mod tests {
     /// fixture — succeeds on device (the hayro parse pipeline holds).
     /// # Brief
     /// 1. `PdfCraftApp::new()` builds.
-    /// 2. `open_bytes("form.pdf", None, SAMPLE_PDF)` returns `Ok(())`.
+    /// 2. `open_bytes("sample-content.pdf", None, SAMPLE_PDF)` returns `Ok(())`.
     #[test]
     fn sample_pdf_opens_in_app() {
         let mut app = PdfCraftApp::new();
-        app.open_bytes("form.pdf", None, super::SAMPLE_PDF.to_vec())
+        app.open_bytes("sample-content.pdf", None, super::SAMPLE_PDF.to_vec())
             .expect("the embedded sample PDF must open on device");
     }
 
