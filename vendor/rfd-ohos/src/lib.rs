@@ -105,10 +105,7 @@ mod tests {
         let mut future = pin!(future);
         let mut cx = Context::from_waker(Waker::noop());
         match future.as_mut().poll(&mut cx) {
-            Poll::Ready(value) => assert!(
-                value.is_none(),
-                "ohos stub dialog 必须解析为 None(取消语义)"
-            ),
+            Poll::Ready(value) => assert!(value.is_none(), "ohos stub dialog 必须解析为 None(取消语义)"),
             Poll::Pending => panic!("ohos stub dialog 不得挂起"),
         }
     }
@@ -117,10 +114,7 @@ mod tests {
     fn builder_chain_covers_ui_egui_surface() {
         // ui-egui 产出的完整 builder 链(add_filter ×41 / set_title ×18 /
         // set_file_name ×10;无 set_directory 等其他方法调用点)。
-        let dialog = AsyncFileDialog::new()
-            .add_filter("PDF 文件", &["pdf"])
-            .set_title("打开")
-            .set_file_name("form.pdf");
+        let dialog = AsyncFileDialog::new().add_filter("PDF 文件", &["pdf"]).set_title("打开").set_file_name("form.pdf");
         assert_immediately_none(dialog.pick_file());
     }
 

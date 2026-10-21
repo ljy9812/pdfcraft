@@ -1137,10 +1137,10 @@ mod tests {
     /// combinations.
     /// # Brief
     /// 1. `(running, pending_redraw)` = (F, F), (F, T), (T, F) → do not skip: a paused loop must
-    ///    not spin on a set flag (the gate drops it after the next `SetRunning(true)`), and a
-    ///    live loop with nothing pending has no reason to leave the wait.
-    /// 2. `(T, T)` → skip: the G7 terminal state (queue empty + flag set + unbounded `Wait`)
-    ///    is exactly the state where a blocking recv would strand the flag forever.
+    ///    not spin on a set flag (the gate drops it after the next `SetRunning(true)`), and a live
+    ///    loop with nothing pending has no reason to leave the wait.
+    /// 2. `(T, T)` → skip: the G7 terminal state (queue empty + flag set + unbounded `Wait`) is
+    ///    exactly the state where a blocking recv would strand the flag forever.
     #[test]
     fn skip_blocking_wait_when_pending_redraw_set() {
         assert!(!should_skip_blocking_wait(false, false));
@@ -1155,15 +1155,15 @@ mod tests {
     /// blocked pump and dispatches exactly one `RedrawRequested`; residual
     /// `Wake` messages with no pending flag are swallowed without a dispatch.
     /// # Brief
-    /// 1. Hand-build the pump channels (the test owns a `tx` clone for raw `Wake` injection)
-    ///    and run the loop — it blocks in the default `ControlFlow::Wait`.
-    /// 2. Sender thread, spaced by sleeps: (a) a raw stale `Wake`, flag unset — must be a
-    ///    no-op; (b) `request_redraw` twice — the flag dedups to one requester wake, one
-    ///    `RedrawRequested` dispatch; (c) another raw stale `Wake` after the gate consumed
-    ///    the flag — again no dispatch.
-    /// 3. The handler exits at the `AboutToWait` of the first full iteration after the
-    ///    redraw — that iteration's pending-redraw gate has already run, so a spurious
-    ///    second dispatch cannot hide behind the exit.
+    /// 1. Hand-build the pump channels (the test owns a `tx` clone for raw `Wake` injection) and
+    ///    run the loop — it blocks in the default `ControlFlow::Wait`.
+    /// 2. Sender thread, spaced by sleeps: (a) a raw stale `Wake`, flag unset — must be a no-op;
+    ///    (b) `request_redraw` twice — the flag dedups to one requester wake, one `RedrawRequested`
+    ///    dispatch; (c) another raw stale `Wake` after the gate consumed the flag — again no
+    ///    dispatch.
+    /// 3. The handler exits at the `AboutToWait` of the first full iteration after the redraw —
+    ///    that iteration's pending-redraw gate has already run, so a spurious second dispatch
+    ///    cannot hide behind the exit.
     /// 4. Assert exactly one `RedrawRequested` across the whole run (flag dedup + stale-wake
     ///    swallow).
     #[test]
@@ -1214,8 +1214,8 @@ mod tests {
 
         assert_eq!(
             redraw_count, 1,
-            "two deduped requests must dispatch exactly one RedrawRequested, and stale Wakes \
-             with no pending flag must not dispatch"
+            "two deduped requests must dispatch exactly one RedrawRequested, and stale Wakes with \
+             no pending flag must not dispatch"
         );
     }
 }

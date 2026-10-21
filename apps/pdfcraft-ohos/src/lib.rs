@@ -70,19 +70,12 @@ const SAMPLE_PDF: &[u8] = include_bytes!("../tests/data/sample-content.pdf");
 /// whole lifetime, satisfying eframe's thread-local event-loop reuse).
 #[ability]
 fn on_ability_event(app: OpenHarmonyApp) {
-    set_global_options(LogOptions {
-        domain: 0,
-        tag: HILOG_TAG,
-    });
+    set_global_options(LogOptions { domain: 0, tag: HILOG_TAG });
     // Bridge the `log` crate into hilog: eframe, egui-winit and the rfd-ohos
     // stub diagnose through `log`, which without a logger is silent on
     // device. Max level Trace so the fork's trace-level lines (forwarded by
     // `LogForwarder` below) surface too.
-    init_once(
-        HilogLogConfig::default()
-            .with_tag(HILOG_TAG)
-            .with_max_level(log::LevelFilter::Trace),
-    );
+    init_once(HilogLogConfig::default().with_tag(HILOG_TAG).with_max_level(log::LevelFilter::Trace));
     // Surface the fork's `tracing` diagnostics (pump instrumentation, task
     // 2.3): the fork depends on `tracing` without the `log` feature and has
     // no subscriber on device, so its pump lines vanish without this
@@ -108,26 +101,24 @@ fn on_ability_event(app: OpenHarmonyApp) {
         hilog_error!("[entry] input scale slot already set — keeping the first");
     }
     hilog_info!("[entry] pdfcraft-ohos init; pump installed; input scale {scale}");
-    let worker = thread::Builder::new()
-        .name("pdfcraft-worker".to_owned())
-        .spawn({
-            let app = app.clone();
-            move || {
-                // A plain worker thread, not an FFI boundary, but a panic
-                // escaping `run_native` would otherwise die with the thread
-                // and leave only the default hook's line; catch it so hilog
-                // carries the diagnosis.
-                let outcome = catch_unwind(AssertUnwindSafe(|| run_eframe(app, pump)));
-                if let Err(payload) = outcome {
-                    let detail = payload
-                        .downcast_ref::<&str>()
-                        .copied()
-                        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-                        .unwrap_or("<non-string panic payload>");
-                    hilog_error!(format!("[worker] eframe PANIC {detail}").as_str());
-                }
+    let worker = thread::Builder::new().name("pdfcraft-worker".to_owned()).spawn({
+        let app = app.clone();
+        move || {
+            // A plain worker thread, not an FFI boundary, but a panic
+            // escaping `run_native` would otherwise die with the thread
+            // and leave only the default hook's line; catch it so hilog
+            // carries the diagnosis.
+            let outcome = catch_unwind(AssertUnwindSafe(|| run_eframe(app, pump)));
+            if let Err(payload) = outcome {
+                let detail = payload
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("<non-string panic payload>");
+                hilog_error!(format!("[worker] eframe PANIC {detail}").as_str());
             }
-        });
+        }
+    });
     if worker.is_err() {
         hilog_error!("[entry] worker spawn failed; eframe will not run");
     }
@@ -151,14 +142,7 @@ fn on_ability_event(app: OpenHarmonyApp) {
 /// arrays and unknown types are logged early returns (a panic crossing the
 /// napi boundary is process-fatal).
 #[napi_derive_ohos::napi]
-pub fn notify_touch_event(
-    event_type: i32,
-    ids: Vec<i32>,
-    xs: Vec<f64>,
-    ys: Vec<f64>,
-    forces: Vec<f64>,
-    device_id: i64,
-) {
+pub fn notify_touch_event(event_type: i32, ids: Vec<i32>, xs: Vec<f64>, ys: Vec<f64>, forces: Vec<f64>, device_id: i64) {
     let Some(forwarder) = INPUT_FORWARDER.get() else {
         hilog_error!("[forward] no input forwarder installed — dropping touch");
         return;
@@ -278,11 +262,7 @@ fn glow_retry_renderer(wgpu_failed: bool) -> Option<eframe::Renderer> {
 /// `OhosDisplayHandle` reaches wgpu-hal's EGL. The renderer is a parameter
 /// (the first launch passes `Renderer::Wgpu`); the glow retry leg builds
 /// its options separately — see [`glow_retry_options`].
-fn native_options(
-    app: OpenHarmonyApp,
-    pump: OhosPump<eframe::UserEvent>,
-    renderer: eframe::Renderer,
-) -> eframe::NativeOptions {
+fn native_options(app: OpenHarmonyApp, pump: OhosPump<eframe::UserEvent>, renderer: eframe::Renderer) -> eframe::NativeOptions {
     let mut options = eframe::NativeOptions {
         event_loop_builder: Some(Box::new(move |builder| {
             builder.with_openharmony_app(app).with_ohos_pump(pump);
@@ -290,9 +270,7 @@ fn native_options(
         renderer,
         ..Default::default()
     };
-    if let eframe::egui_wgpu::WgpuSetup::CreateNew(create_new) =
-        &mut options.wgpu_options.wgpu_setup
-    {
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(create_new) = &mut options.wgpu_options.wgpu_setup {
         create_new.instance_descriptor.backends = eframe::wgpu::Backends::GL;
     }
     options
@@ -323,10 +301,7 @@ fn new_app_with_sample_pdf() -> PdfCraftApp {
 /// `run_loop` latch is first-install-wins), so a second pump is not a thing
 /// this process can produce.
 fn glow_retry_options(renderer: eframe::Renderer) -> eframe::NativeOptions {
-    eframe::NativeOptions {
-        renderer,
-        ..Default::default()
-    }
+    eframe::NativeOptions { renderer, ..Default::default() }
 }
 
 /// Worker body: launch with wgpu, and on a wgpu startup failure retry once
@@ -335,22 +310,15 @@ fn glow_retry_options(renderer: eframe::Renderer) -> eframe::NativeOptions {
 /// second leg, not a placeholder).
 fn run_eframe(app: OpenHarmonyApp, pump: OhosPump<eframe::UserEvent>) {
     hilog_info!("[worker] renderer wgpu — entering eframe::run_native");
-    let result = eframe::run_native(
-        APP_TITLE,
-        native_options(app, pump, eframe::Renderer::Wgpu),
-        Box::new(|_cc| Ok(Box::new(new_app_with_sample_pdf()))),
-    );
+    let result =
+        eframe::run_native(APP_TITLE, native_options(app, pump, eframe::Renderer::Wgpu), Box::new(|_cc| Ok(Box::new(new_app_with_sample_pdf()))));
     match glow_retry_renderer(matches!(result, Err(eframe::Error::Wgpu(_)))) {
         Some(renderer) => {
             // `glow_retry_renderer` only returns Some over a wgpu failure,
             // so this report always carries the underlying error.
             report_run(&result);
             hilog_info!("[worker] retrying with glow");
-            let retry = eframe::run_native(
-                APP_TITLE,
-                glow_retry_options(renderer),
-                Box::new(|_cc| Ok(Box::new(new_app_with_sample_pdf()))),
-            );
+            let retry = eframe::run_native(APP_TITLE, glow_retry_options(renderer), Box::new(|_cc| Ok(Box::new(new_app_with_sample_pdf()))));
             report_run(&retry);
         }
         None => report_run(&result),
@@ -454,19 +422,12 @@ mod tests {
         let app = OpenHarmonyApp::new();
         let pump = OhosPump::<eframe::UserEvent>::install(&app);
         let options = super::native_options(app, pump, eframe::Renderer::Wgpu);
-        assert!(
-            options.event_loop_builder.is_some(),
-            "event_loop_builder hook must be installed"
-        );
+        assert!(options.event_loop_builder.is_some(), "event_loop_builder hook must be installed");
         assert_eq!(options.renderer, eframe::Renderer::Wgpu);
-        let eframe::egui_wgpu::WgpuSetup::CreateNew(create_new) = &options.wgpu_options.wgpu_setup
-        else {
+        let eframe::egui_wgpu::WgpuSetup::CreateNew(create_new) = &options.wgpu_options.wgpu_setup else {
             panic!("native_options must keep the default CreateNew wgpu setup");
         };
-        assert_eq!(
-            create_new.instance_descriptor.backends,
-            eframe::wgpu::Backends::GL
-        );
+        assert_eq!(create_new.instance_descriptor.backends, eframe::wgpu::Backends::GL);
     }
 
     /// UT for the glow retry decision (design D13) — pdfcraft main.rs's
@@ -479,10 +440,7 @@ mod tests {
     /// 3. The retry's options carry `Renderer::Glow`.
     #[test]
     fn renderer_falls_back_to_glow_on_wgpu_error() {
-        assert_eq!(
-            super::glow_retry_renderer(true),
-            Some(eframe::Renderer::Glow)
-        );
+        assert_eq!(super::glow_retry_renderer(true), Some(eframe::Renderer::Glow));
         assert_eq!(super::glow_retry_renderer(false), None);
         let app = OpenHarmonyApp::new();
         let pump = OhosPump::<eframe::UserEvent>::install(&app);
@@ -499,8 +457,7 @@ mod tests {
     #[test]
     fn sample_pdf_opens_in_app() {
         let mut app = PdfCraftApp::new();
-        app.open_bytes("sample-content.pdf", None, super::SAMPLE_PDF.to_vec())
-            .expect("the embedded sample PDF must open on device");
+        app.open_bytes("sample-content.pdf", None, super::SAMPLE_PDF.to_vec()).expect("the embedded sample PDF must open on device");
     }
 
     /// UT for the napi touch-forward guards (frame-spike discipline): a panic
