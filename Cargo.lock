@@ -1847,6 +1847,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bf3c259d255ca70051b30e2e95b5446cdb8949ac4cd22c0d7fd634d89f568e2"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "epaint"
 version = "0.36.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4009,6 +4018,8 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d5240fe707573b945325f3f1bb0a56f300f5eaef30f7ad0c71d5ec85abca9dd"
 dependencies = [
+ "env_filter",
+ "log",
  "ohos-enum-derive",
  "ohos-hilogs-sys",
 ]
