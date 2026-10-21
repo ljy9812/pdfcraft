@@ -9,8 +9,17 @@ license.workspace = true
 # blueprint this crate ports is proven on the 2021 face (ohos-winit p1).
 edition = "2021"
 
-[lints]
-workspace = true
+[lints.rust]
+# The workspace forbids unsafe_code, but napi-derive-ohos 1.2.0's ctor
+# codegen emits #[allow(unsafe_code)] on the export-registration items
+# (E0453 under forbid — a `forbid` on the command line cannot be downgraded
+# by an inner allow). Deny keeps any unattributed unsafe in this crate a
+# hard error while letting the macro-generated registration compile.
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -33,7 +42,10 @@ openharmony-ability-derive = { path = "../../vendor/openharmony-ability/crates/d
 napi-ohos = "=1.2.0"
 napi-derive-ohos = "=1.2.0"
 # hilog bridge: log records -> hilog (frame-spike LogForwarder pattern).
-ohos-hilog-binding = "=0.2.4"
+# hilog bridge: the `log` feature bridges the `log` crate into hilog
+# (frame-spike declaration) — without it `ohos_hilog_binding::log` is
+# configured out and the entry's log→hilog bridge does not compile.
+ohos-hilog-binding = { version = "=0.2.4", features = ["log"] }
 tracing = "0.1"
 log = { workspace = true }
 
