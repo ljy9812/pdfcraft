@@ -10,6 +10,86 @@
 //!
 //! 本 crate 是本地 stub 代码,不是上游 vendoring。
 
+use std::future::{ready, Future};
+use std::path::{Path, PathBuf};
+
+/// 异步文件对话框的 no-op 替身(上游 `rfd::AsyncFileDialog` 面)。
+///
+/// builder 方法仅留存用于 log 的请求要素;四个 pick 全部立即解析为 `None`
+/// ——用户取消语义,ui-egui 调用方对取消路径已有处理(直接返回)。
+/// 签名逐一对照上游 0.17.2(registry `src/file_dialog.rs`)。
+#[derive(Default)]
+pub struct AsyncFileDialog {
+    filter_names: Vec<String>,
+    title: Option<String>,
+    file_name: Option<String>,
+}
+
+impl AsyncFileDialog {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_filter(mut self, name: impl Into<String>, _extensions: &[impl ToString]) -> Self {
+        // 扩展名列表不弹窗无处消费,仅记过滤器名(请求要素)。
+        self.filter_names.push(name.into());
+        self
+    }
+
+    pub fn set_file_name(mut self, file_name: impl Into<String>) -> Self {
+        self.file_name = Some(file_name.into());
+        self
+    }
+
+    pub fn set_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    /// 请求要素落一条 log(info 级:ohos 面这是设计内 known-gap 行为,非异常)。
+    fn log_declined(&self, kind: &str) {
+        log::info!(
+            "rfd-ohos stub: {kind} dialog declined (title={:?}, filters=[{}], file_name={:?}) \
+             — no rfd backend on OpenHarmony",
+            self.title,
+            self.filter_names.join(", "),
+            self.file_name,
+        );
+    }
+
+    pub fn pick_file(self) -> impl Future<Output = Option<FileHandle>> {
+        self.log_declined("pick_file");
+        ready(None)
+    }
+
+    pub fn pick_files(self) -> impl Future<Output = Option<Vec<FileHandle>>> {
+        self.log_declined("pick_files");
+        ready(None)
+    }
+
+    pub fn pick_folder(self) -> impl Future<Output = Option<FileHandle>> {
+        self.log_declined("pick_folder");
+        ready(None)
+    }
+
+    pub fn save_file(self) -> impl Future<Output = Option<FileHandle>> {
+        self.log_declined("save_file");
+        ready(None)
+    }
+}
+
+/// 对话框返回文件的替身(上游 `rfd::FileHandle` 面):仅 `path()`。
+/// stub 的 pick 全部返回 `None`,运行期不存在构造点;字段保持上游同形
+/// (`PathBuf` 私有元组),derive 与上游一致(Clone)。
+#[derive(Clone)]
+pub struct FileHandle(PathBuf);
+
+impl FileHandle {
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::future::Future;
