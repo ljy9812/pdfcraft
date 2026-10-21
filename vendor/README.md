@@ -34,6 +34,23 @@ The regression `pdfcraft` `tests::pipeline_creation_error_is_returned_and_device
 uses an invalid three-sample pipeline, then valid and invalid pipelines again on the same device.
 Later rendering errors, device loss, and non-winit renderer construction are unchanged.
 
+winit OHOS backend (ohos-craft-p2): merged in from the egui-repo winit fork (branch `ohos`,
+upstream-0.30.13 base, terminal merge commit `b513f15`) for HarmonyOS (`aarch64-unknown-linux-ohos`,
+`target_env = "ohos"`): `Cargo.toml` gains a `cfg(target_env = "ohos")` dependency table
+(`openharmony-ability` at the vendored sibling `../openharmony-ability/crates/ability`,
+`ohos-xcomponent-binding`, `ohos-hilog-binding`) and the desktop-unix dependency clauses
+(calloop, sctk, wayland-*, x11*, ...) now exclude `target_env = "ohos"`; `build.rs` adds the
+`ohos_platform` alias and excludes it from `free_unix`; `src/platform/ohos.rs` and
+`src/platform_impl/ohos/` (event loop, event pump, input translation, keycodes, window) are the
+backend proper, carrying their own on-device test suite (48 lib tests via the fork's
+hdc-test-runner channel). All thirteen desktop patches above are untouched — their footprint
+(`platform_impl/{linux,macos,windows}`) is disjoint from the merge paths. The fork's
+repo-local infrastructure (`.cargo/`, `ndk/`, `rust-toolchain`, clippy/rustfmt configs, the empty
+`[workspace]` boundary table) is deliberately not carried; PdfCraft's `exclude = ["vendor"]`
+serves the boundary role. Host semantics are unchanged (the backend compiles only under
+`target_env = "ohos"`); `cargo check -p pdfcraft` on the host stays green. Not for upstream:
+the OHOS backend is an egui-fork concern (see `ohos-spike/P2_NOTES.md` in the egui repo).
+
 Temporary: hayro is the bootstrap renderer and lopdf the bootstrap inspector (ADR-0004); M2.6 replaces them with our own devices and `cos`/`model`.
 
 TIFF predictor decoding: hayro-syntax aligns the output writer to a byte boundary after each

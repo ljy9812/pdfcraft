@@ -9,6 +9,8 @@ mod ios;
 mod linux;
 #[cfg(macos_platform)]
 mod macos;
+#[cfg(ohos_platform)]
+mod ohos;
 #[cfg(orbital_platform)]
 mod orbital;
 #[cfg(web_platform)]
@@ -24,6 +26,8 @@ use ios as platform;
 use linux as platform;
 #[cfg(macos_platform)]
 use macos as platform;
+#[cfg(ohos_platform)]
+use ohos as platform;
 #[cfg(orbital_platform)]
 use orbital as platform;
 #[cfg(web_platform)]
@@ -70,6 +74,7 @@ impl From<Fullscreen> for RootFullscreen {
     not(windows_platform),
     not(macos_platform),
     not(android_platform),
+    not(ohos_platform),
     not(x11_platform),
     not(wayland_platform),
     not(web_platform),

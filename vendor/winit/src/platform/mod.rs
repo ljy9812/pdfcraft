@@ -8,6 +8,8 @@ pub mod android;
 pub mod ios;
 #[cfg(any(macos_platform, docsrs))]
 pub mod macos;
+#[cfg(any(ohos_platform, docsrs))]
+pub mod ohos;
 #[cfg(any(orbital_platform, docsrs))]
 pub mod orbital;
 #[cfg(any(x11_platform, wayland_platform, docsrs))]
@@ -25,6 +27,7 @@ pub mod x11;
     windows_platform,
     macos_platform,
     android_platform,
+    ohos_platform,
     x11_platform,
     wayland_platform,
     docsrs,
@@ -35,6 +38,7 @@ pub mod run_on_demand;
     windows_platform,
     macos_platform,
     android_platform,
+    ohos_platform,
     x11_platform,
     wayland_platform,
     docsrs,
