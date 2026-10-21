@@ -54,16 +54,36 @@ try {
 }
 if ($LASTEXITCODE -ne 0) { throw "cargo release build failed (exit $LASTEXITCODE)" }
 
-# 2. Stage the .so for hvigor's automatic arm64-v8a packing.
+# 2. Stage the .so for hvigor's automatic arm64-v8a packing. The libs dir is
+#    gitignored (entry/.gitignore /libs), so a fresh checkout reaches this
+#    point without it — create it before the copy.
 if (-not (Test-Path $libSrc)) { throw "release .so not found: $libSrc" }
+New-Item -ItemType Directory -Force (Split-Path -Parent $libDst) | Out-Null
 Copy-Item $libSrc $libDst -Force
 Write-Output "staged: $libDst"
 
-# 3. hvigor release HAP. DEVECO_SDK_HOME is required; default it to the
-#    DevEco Studio install on this machine when the environment lacks it.
+# 3. ohpm dependency install (the step DevEco's project Sync silently did
+#    for frame-spike; a fresh checkout has no oh_modules and hvigor's ArkTS
+#    compile fails to resolve @ohos-rs/ability). Incremental — a no-op in
+#    under a second when up to date. ohpm rides the DevEco tools install;
+#    default to this machine's path when the env lacks an override.
+#    DEVECO_SDK_HOME is required below anyway; default it to the DevEco
+#    Studio install on this machine when the environment lacks it.
 if (-not $env:DEVECO_SDK_HOME) {
     $env:DEVECO_SDK_HOME = 'C:\Program Files\Huawei\DevEco Studio\sdk'
 }
+$ohpm = Join-Path $env:DEVECO_SDK_HOME 'tools\ohpm\bin\ohpm.bat'
+if (-not (Test-Path $ohpm)) { $ohpm = 'C:\Program Files\Huawei\DevEco Studio\tools\ohpm\bin\ohpm.bat' }
+if (-not (Test-Path $ohpm)) { throw "ohpm.bat not found (set DEVECO_SDK_HOME or install DevEco Studio tools)" }
+Push-Location $appDir
+try {
+    & $ohpm install --all
+} finally {
+    Pop-Location
+}
+if ($LASTEXITCODE -ne 0) { throw "ohpm install failed (exit $LASTEXITCODE)" }
+
+# 4. hvigor release HAP.
 Push-Location $appDir
 try {
     hvigorw assembleHap --mode module -p product=default -p buildMode=release
@@ -72,11 +92,20 @@ try {
 }
 if ($LASTEXITCODE -ne 0) { throw "hvigor assembleHap failed (exit $LASTEXITCODE)" }
 
+# Prefer the signed artifact; without a local signingConfig hvigor emits the
+# unsigned one (see the header note — install then fails with a signature
+# error, expected on a fresh checkout).
 $hap = Join-Path $appDir 'entry\build\default\outputs\default\entry-default-signed.hap'
+if (-not (Test-Path $hap)) {
+    $hap = Join-Path $appDir 'entry\build\default\outputs\default\entry-default-unsigned.hap'
+    if (Test-Path $hap) {
+        Write-Warning "no signingConfig: using the UNSIGNED hap - hdc install will fail until DevEco auto-sign writes the local build-profile.json5 copy"
+    }
+}
 if (-not (Test-Path $hap)) { throw "HAP not found: $hap" }
 Write-Output "HAP: $hap"
 
-# 4. Device install (replace in place).
+# 5. Device install (replace in place).
 if (-not $NoInstall) {
     hdc install -r $hap
     if ($LASTEXITCODE -ne 0) { throw "hdc install failed (exit $LASTEXITCODE)" }
