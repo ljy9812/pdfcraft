@@ -1,0 +1,44 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "deviceTypes": [
+      "default",
+      "tablet",
+      "2in1"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        // p4 E1 (design D10): restrict the ability to fullscreen — without
+        // this tag the default admits free/split windows, and on a free
+        // window the XComponent input focus dies (the R2 dead zone).
+        // Spelling per the hvigor modulecheck schema: "fullscreen" | "split"
+        // | "floating" (lowercase; SDK toolchains/modulecheck/module.json).
+        "supportWindowMode": ["fullscreen"],
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "action.system.home"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

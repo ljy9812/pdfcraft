@@ -1,0 +1,44 @@
+{
+  "app": {
+    // 签名物料外化（p4 task 9.3 / design D12）：提交树为净身形态，不含任何签名配置。
+    // 本机构建前由 DevEco auto-sign 写回本地副本——该副本保持为未提交的工作树修改，永不提交。
+    // Local signing: let DevEco auto-sign (or paste your own signing block) restore the
+    // local copy before assembling a signed HAP; see DECISIONS.md G5 / design D12.
+    "products": [
+      {
+        "name": "default",
+        "compatibleSdkVersion": "6.1.0(23)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        },
+        "targetSdkVersion": "6.1.0(23)"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
