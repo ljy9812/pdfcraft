@@ -1,9 +1,17 @@
 {
   "app": {
+    // PdfCraft vendor sanitization (ohos-craft-p2 task 7.2): the upstream
+    // ohdev checkout ships this demo build-profile with the maintainer's
+    // materialized local auto-sign block (DevEco-materialized secrets and
+    // machine-local material paths). The vendor copy strips it per this
+    // repo's signing discipline — the only deliberate deviation from the
+    // ohdev @ 01440bb working-tree state (documented in egui-repo
+    // P2_NOTES 7.x). The demo app is not part of any PdfCraft build; to run
+    // it, restore the block from the upstream repository or auto-sign
+    // locally in DevEco Studio.
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
         "compatibleSdkVersion": "5.0.0(12)",
         "targetSdkVersion": "5.0.0(12)",
         "runtimeOS": "HarmonyOS",
@@ -21,21 +29,6 @@
       },
       {
         "name": "release",
-      },
-    ],
-    "signingConfigs": [
-      {
-        "name": "default",
-        "type": "HarmonyOS",
-        "material": {
-          "certpath": "/Users/ranger/.ohos/config/default_demo_yyjiCVAYks5mJoCjAMZ-6HF1H5m1uKXWecIn5uDJwdE=.cer",
-          "keyAlias": "debugKey",
-          "keyPassword": "0000001B165E7B106C3365DE78329D65754C69AF5D15D34F5AD953726B117AAB736E515277624D3A407C3E",
-          "profile": "/Users/ranger/.ohos/config/default_demo_yyjiCVAYks5mJoCjAMZ-6HF1H5m1uKXWecIn5uDJwdE=.p7b",
-          "signAlg": "SHA256withECDSA",
-          "storeFile": "/Users/ranger/.ohos/config/default_demo_yyjiCVAYks5mJoCjAMZ-6HF1H5m1uKXWecIn5uDJwdE=.p12",
-          "storePassword": "0000001BB2469C4F096DEE4DF743016517039A9F42DAE8A1D49512630DD230FC4820EA60C5D43BC99D3139",
-        },
       },
     ],
   },
