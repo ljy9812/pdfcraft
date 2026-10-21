@@ -6,6 +6,7 @@
 /.test
 /.hvigor
 /.appanalyzer
+/.idea
 /hvigor-build.log
 /r2-run.log
 *.json.bak

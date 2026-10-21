@@ -234,8 +234,10 @@ fn effective_touch_scale(captured: Option<f32>) -> f64 {
 
 /// One coordinate's vp→px conversion — the pump channel's coordinate
 /// contract. The f64→f32 cast saturates to inf on pathological input
-/// (defined FP semantics — no panic, no UB) and the fork translator's clamp
-/// absorbs it.
+/// (defined FP semantics — no panic, no UB); coordinates are not clamped
+/// here — the fork translator clamps force only — so a non-finite vp flows
+/// on as-is, and the deliberate degrade boundary is the scale side
+/// (effective_touch_scale).
 fn vp_to_px(vp: f64, scale: f64) -> f32 {
     (vp * scale) as f32
 }

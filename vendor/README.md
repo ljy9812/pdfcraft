@@ -35,7 +35,8 @@ uses an invalid three-sample pipeline, then valid and invalid pipelines again on
 Later rendering errors, device loss, and non-winit renderer construction are unchanged.
 
 winit OHOS backend (ohos-craft-p2): merged in from the egui-repo winit fork (branch `ohos`,
-upstream-0.30.13 base, terminal merge commit `b513f15`) for HarmonyOS (`aarch64-unknown-linux-ohos`,
+upstream-0.30.13 base, merge commit `b513f15`; since byte-synced to the fork's fmt-only `53e300c`,
+PdfCraft commit `507763a6`) for HarmonyOS (`aarch64-unknown-linux-ohos`,
 `target_env = "ohos"`): `Cargo.toml` gains a `cfg(target_env = "ohos")` dependency table
 (`openharmony-ability` at the vendored sibling `../openharmony-ability/crates/ability`,
 `ohos-xcomponent-binding`, `ohos-hilog-binding`) and the desktop-unix dependency clauses
