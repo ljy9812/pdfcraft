@@ -1,0 +1,22 @@
+# DevEco / hvigor build outputs
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/entry/libs
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+
+# Web payload — deployed from this repo's release zip by scripts/fetch-web.ps1
+/entry/src/main/resources/rawfile/web/*
+!/entry/src/main/resources/rawfile/web/README.md
+
+# Local material (signing fragments, downloaded zips) — never commit
+/downloads/
+/local/
