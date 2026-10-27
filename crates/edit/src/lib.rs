@@ -29,6 +29,13 @@ pub enum EditError {
     Cos(#[from] pdfcraft_cos::CosError),
 }
 
+/// A Type 3 fallback error surfaces as its message (see [`EditError::Invalid`]).
+impl From<pdfcraft_fonts::type3::Type3Error> for EditError {
+    fn from(e: pdfcraft_fonts::type3::Type3Error) -> Self {
+        EditError::Invalid(e.to_string())
+    }
+}
+
 /// The kinds of page marks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MarkKind {

@@ -11,8 +11,10 @@
 use std::collections::{HashMap, HashSet};
 
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString, Stream};
+use pdfcraft_fonts::type3::{cjk_wrap, fallback_face, glyph_advance, is_cjk};
 use pdfcraft_fonts::{
-    GlyphError, GlyphOutline, ShapedCluster, ShapedScript, Std14, literal, shape_arabic, shape_hebrew, shape_thai, shaped_glyph, win_ansi,
+    CraftFont, GlyphError, GlyphOutline, ShapedCluster, ShapedScript, Std14, document_japanese_fonts_for_style, japanese_glyph_from, literal,
+    shape_arabic, shape_hebrew, shape_thai, shaped_glyph, ui_chinese_fonts, win_ansi,
 };
 use unicode_bidi::{Level, ParagraphBidiInfo};
 
@@ -239,6 +241,9 @@ pub fn lines(t: &AddedText) -> Vec<String> {
 /// does).
 fn wrapped(t: &AddedText) -> Vec<(String, bool)> {
     let width = (t.rect[2] - t.rect[0]).max(t.size);
+    // An item with CJK that isn't on the Thai or shaped path (the dispatch `draw` makes) is drawn
+    // with the CJK Type 3 fallback, so its paragraphs wrap character by character.
+    let cjk = if t.text.chars().any(is_cjk) && !t.text.chars().any(is_thai) && !shaped_by_a_face(t) { item_cjk_face(t) } else { None };
     let mut out = Vec::new();
     for para in t.text.split('\n') {
         // Arabic or Hebrew: laid out with the bidirectional algorithm and shaped.
@@ -249,6 +254,10 @@ fn wrapped(t: &AddedText) -> Vec<(String, bool)> {
             && let Ok(lines) = thai_lines(t, para, width)
         {
             out.extend(lines.into_iter().map(|line| (line, false)));
+            continue;
+        }
+        if let (Some(face), false) = (cjk, rtl_script) {
+            out.extend(cjk_lines(t, para, width, face).into_iter().map(|line| (line, false)));
             continue;
         }
         let rtl = rtl_script && unicode_bidi::get_base_direction(para) == unicode_bidi::Direction::Rtl;
@@ -322,6 +331,45 @@ fn is_hebrew(c: char) -> bool {
     matches!(u32::from(c), 0x0591..=0x05F4 | 0xFB1D..=0xFB4F)
 }
 
+/// The faces an item with CJK text (ideographs, kana, the extensions and full-width forms —
+/// `pdfcraft_fonts::type3::is_cjk`, the class the replacement's fallback stands in for) may draw it
+/// with, best first: the Japanese document faces for the style, then the Chinese (Hans) ones for
+/// the code points they lack (欢, 导, …). Empty without craft-fonts, which [`first_undrawable`]
+/// refuses before `draw` is reached.
+fn cjk_faces(family: Family, bold: bool) -> Vec<&'static CraftFont> {
+    document_japanese_fonts_for_style(family == Family::Times, bold).into_iter().chain(ui_chinese_fonts()).collect()
+}
+
+/// The one face a CJK item's glyphs all come from: the first face with every character of `text`,
+/// else the first face ([`crate::text::fallback_face`]'s rule — the face `draw_cjk` then uses, so
+/// layout and drawing agree). `None` when no face exists (without craft-fonts).
+fn cjk_face(text: &str, faces: &[&'static CraftFont]) -> Option<&'static CraftFont> {
+    let mut seen = HashSet::new();
+    let chars: Vec<char> = text.chars().filter(|c| seen.insert(*c)).collect();
+    fallback_face(faces, &chars, |face, ch| japanese_glyph_from(face, ch).is_ok())
+}
+
+/// The face the whole item's glyphs come from, over its text without line breaks — the text
+/// `draw_cjk`'s Type 3 font is built for, whose advances the item is wrapped with. `None` when
+/// there is none (without craft-fonts).
+fn item_cjk_face(t: &AddedText) -> Option<&'static CraftFont> {
+    let flat: String = t.text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    cjk_face(&flat, &cjk_faces(t.family, t.bold))
+}
+
+/// CJK wrapping: every character is a break opportunity (the way CJK text is set), while a run of
+/// other characters (a Latin word) breaks as one, each measured with the face whose Type 3 font
+/// draws the item. Break-opportunity wrapping, not kinsoku (line-start 禁則) processing.
+fn cjk_lines(t: &AddedText, para: &str, width: f64, face: &'static CraftFont) -> Vec<String> {
+    // Each distinct character's advance once, the one `draw_cjk` moves the pen by, so a line
+    // breaks exactly where it is drawn to break.
+    let mut advances: HashMap<char, f64> = HashMap::new();
+    for c in para.chars() {
+        advances.entry(c).or_insert_with(|| glyph_advance(face, c).unwrap_or(0.0) * t.size);
+    }
+    cjk_wrap(para, width, &advances)
+}
+
 /// The first character of `t` that would be drawn as `?`: outside WinAnsiEncoding and not drawn
 /// with the craft-fonts Arabic (#125) or Hebrew (#128) face, or Arabic or Hebrew that the face can't
 /// draw (or that has no face to draw it). Page-content tools refuse such text; the Add-text editor
@@ -332,6 +380,10 @@ pub fn first_undrawable(t: &AddedText) -> Option<char> {
             return Some(c);
         }
         let rest = AddedText { text: t.text.chars().filter(|c| !is_thai(*c)).collect(), ..t.clone() };
+        // The item stays on the shaped path, which CJK isn't drawn on.
+        if rest.text.chars().any(is_cjk) {
+            return rest.text.chars().find(|c| is_cjk(*c));
+        }
         return first_undrawable(&rest);
     }
     // Arabic or Hebrew that nothing can draw: there's no face, or the face lacks it.
@@ -339,6 +391,17 @@ pub fn first_undrawable(t: &AddedText) -> Option<char> {
         t.text.chars().find(|c| (shaped_arabic(*c) && !pdfcraft_fonts::arabic_has(*c)) || (is_hebrew(*c) && !pdfcraft_fonts::hebrew_has(*c)))
     {
         return Some(c);
+    }
+    // CJK drawn with the Type 3 fallback (`draw_cjk`): drawn when some Japanese or Chinese face has
+    // the glyph, which also covers the code points the Japanese faces alone lack (欢, 导, …). Items
+    // with shaped Arabic or Hebrew stay on that path, which CJK isn't drawn on.
+    if t.text.chars().any(is_cjk) && !shaped_by_a_face(t) {
+        let faces = cjk_faces(t.family, t.bold);
+        if let Some(c) = t.text.chars().find(|c| is_cjk(*c) && faces.iter().all(|face| japanese_glyph_from(face, *c).is_err())) {
+            return Some(c);
+        }
+        let rest = AddedText { text: t.text.chars().filter(|c| !is_cjk(*c)).collect(), ..t.clone() };
+        return first_undrawable(&rest);
     }
     if !shaped_by_a_face(t) {
         // Drawn line by line in the item's standard font (`\n` splits lines). Without the face
@@ -639,6 +702,66 @@ fn draw_laid_shaped(
     Ok(())
 }
 
+/// Draw a text item that has CJK in it, with the Type 3 fallback a replacement's retyped text
+/// uses: the whole item in one face (the Japanese document face for the style, WenQuanYi for the
+/// Simplified-only code points it lacks), on one baseline per line, as generated font codes with a
+/// ToUnicode map for copy and search. Lines wrap character by character; each keeps its typing
+/// order explicitly in an ActualText span, as `draw_laid_shaped` does.
+fn draw_cjk(doc: &mut Document, t: &AddedText, taken: &Dict, fonts: &mut Dict, out: &mut Vec<u8>) -> Result<(), EditError> {
+    let r = text_rect(t);
+    // The font is generated into a scratch dictionary seeded with the page's font names, so the
+    // names it takes (PCJp, PCJp1, ...) miss them the way the item's other fonts do; the generated
+    // fonts then move into the item's dictionary, which holds only its standard font.
+    let flat: String = t.text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    let mut scratch = taken.clone();
+    let fallback = pdfcraft_fonts::type3::type3_font(doc, &mut scratch, &flat, t.family == Family::Times, t.bold, GLYPHS_PER_FONT)?;
+    for name in &fallback.names {
+        if let Some(obj) = scratch.remove(name.as_bytes()) {
+            fonts.set(name.clone().into_bytes(), obj);
+        }
+    }
+    // The advance each character is drawn with, from the generated font's own widths.
+    let mut advances: HashMap<char, f64> = HashMap::new();
+    for (ch, width) in &fallback.widths {
+        advances.insert(*ch, width * t.size);
+    }
+    let [cr, cg, cb] = t.color.map(|v| v.clamp(0.0, 1.0));
+    out.extend(format!("BT {} {} {} rg\n", n(cr), n(cg), n(cb)).bytes());
+    let laid = lines(t);
+    for (i, line) in laid.iter().enumerate() {
+        // Keep the line's typing order explicitly, including punctuation and mixed-script digits.
+        let logical: String = line.encode_utf16().map(|u| format!("{u:04X}")).collect();
+        out.extend(format!("/Span <</ActualText <FEFF{logical}>>> BDC\n").bytes());
+        let chars: Vec<(char, f64)> = line.chars().filter_map(|c| advances.get(&c).map(|w| (c, *w))).collect();
+        let w: f64 = chars.iter().map(|(_, w)| *w).sum();
+        // CJK has no spaces to stretch, so a justified line is set flush left.
+        let x = match t.align {
+            Align::Left | Align::Justify => r[0],
+            Align::Center => r[0] + ((r[2] - r[0]) - w) / 2.0,
+            Align::Right => r[2] - w,
+        };
+        // Baseline: 0.8 em below the line top, 1.2 em between lines, as the other paths.
+        let y = r[3] - (i as f64 * 1.2 + 0.95) * t.size;
+        let mut pen = x;
+        let mut current: Option<&str> = None;
+        for (ch, cw) in chars {
+            let Some(&(font, code)) = fallback.codes.get(&ch) else { continue };
+            let Some(name) = fallback.names.get(font) else { continue };
+            if current != Some(name.as_str()) {
+                out.extend(format!("/{name} {} Tf ", n(t.size)).bytes());
+                current = Some(name.as_str());
+            }
+            out.extend(format!("1 0 0 1 {} {} Tm ", n(pen), n(y)).bytes());
+            out.extend(literal(&[code]));
+            out.extend_from_slice(b" Tj\n");
+            pen += cw;
+        }
+        out.extend_from_slice(b"EMC\n");
+    }
+    out.extend_from_slice(b"ET\n");
+    Ok(())
+}
+
 /// What makes two clusters the same Type 3 glyph: text, glyphs, offsets and advance (bit for bit;
 /// equal clusters come from the same font units).
 type ClusterKey<'a> = (ShapedScript, &'a str, Vec<(u32, u64, u64)>, u64);
@@ -772,6 +895,15 @@ fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict, existing:
                 || face_or_new(is_hebrew, pdfcraft_fonts::document_hebrew_font(false).is_some())
             {
                 draw_shaped(doc, t, taken, &mut fonts, &mut out)?;
+                res.set(b"Font".to_vec(), Object::Dict(fonts));
+                out.extend_from_slice(b"Q\n");
+                return Ok((out, res));
+            }
+            // CJK: the Type 3 fallback a replacement's retyped text uses (draw_cjk). Without the
+            // faces a new item is refused by `validate`; an existing one keeps drawing `?`, as it
+            // was before CJK was supported, rather than refusing to move.
+            if face_or_new(is_cjk, !cjk_faces(t.family, t.bold).is_empty()) {
+                draw_cjk(doc, t, taken, &mut fonts, &mut out)?;
                 res.set(b"Font".to_vec(), Object::Dict(fonts));
                 out.extend_from_slice(b"Q\n");
                 return Ok((out, res));
@@ -1128,12 +1260,18 @@ pub fn delete_content(doc: &mut Document, page: usize, index: usize) -> Result<(
     Ok(())
 }
 
-/// The Type 3 fonts an Arabic item's stream shows text with. Each item has its own (`draw_shaped`
-/// names them so), so they go when the item is replaced or deleted.
+/// The Type 3 fonts an added item's stream shows text with: `PCAr` (Arabic, Hebrew and Thai) or
+/// `PCJp`/`PCHe` (CJK). Each item has its own (`draw_shaped` and `draw_cjk` name them so; the
+/// CJK ones also miss the page's own names of the replace path), so they go when the item is
+/// replaced or deleted.
 fn own_fonts(doc: &Document, obj: ObjRef) -> Vec<Vec<u8>> {
     let Object::Stream(s) = &*doc.get(obj) else { return Vec::new() };
     let Ok(data) = s.decoded() else { return Vec::new() };
-    data.split(u8::is_ascii_whitespace).filter_map(|w| w.strip_prefix(b"/")).filter(|w| w.starts_with(b"PCAr")).map(<[u8]>::to_vec).collect()
+    data.split(u8::is_ascii_whitespace)
+        .filter_map(|w| w.strip_prefix(b"/"))
+        .filter(|w| w.starts_with(b"PCAr") || w.starts_with(b"PCJp") || w.starts_with(b"PCHe"))
+        .map(<[u8]>::to_vec)
+        .collect()
 }
 
 fn drop_fonts(doc: &Document, res: &mut Dict, names: &[Vec<u8>]) {

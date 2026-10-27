@@ -1502,6 +1502,12 @@ fn control_quit_retains_blocked_content_typing_after_cancel() {
     assert_eq!(h.state().views[0].content.draft.as_ref().unwrap().text, "Keep 世界");
     h.state_mut().active = None;
     assert!(!h.state().session.get(h.state().views[0].id).unwrap().dirty);
+    // With craft-fonts the fallback draws "世界": the draft isn't blocked, so it isn't unsaved
+    // work (the same as a Latin draft), and quit goes ahead without confirmation.
+    if pdfcraft_fonts::document_japanese_font().is_some() {
+        assert_eq!(ok(&mut h, &c, "ui.quit", json!({})), json!({"quitting":true,"needs_confirmation":false}));
+        return;
+    }
     assert_eq!(ok(&mut h, &c, "ui.quit", json!({})), json!({"quitting":false,"needs_confirmation":true}));
     h.run_steps(3);
     ok(&mut h, &c, "ui.click", json!({"label":"Cancel"}));

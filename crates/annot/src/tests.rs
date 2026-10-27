@@ -351,6 +351,52 @@ fn text_box_text_and_colour_changes_are_drawn() {
     assert!(rc.starts_with("<?xml") && rc.contains("<p dir=\"ltr\">Caf\u{e9} (draft) \u{2014} 100%</p>") && rc.contains("color:#FF0000"), "{rc}");
 }
 
+/// A comment's CJK text is drawn with a Type 3 fallback font, the way the Add-text tool draws
+/// page content, and its box is re-fitted for the lines that draws: full-width advances, not the
+/// `?`-widths the standard fonts measure them at (a one-line fit would clip the second line).
+/// Without craft-fonts the fallback can't be built, so the text is marked and drawn `?`, as ever.
+#[test]
+fn cjk_comment_text_draws_with_a_type3_fallback() {
+    let mut doc = fixture();
+    // Narrow enough that full-width characters wrap, so the re-fit has to grow the box for them.
+    let t = add_annotation(&mut doc, &new(0, Shape::TextBox { rect: [0.0, 0.0, 30.0, 100.0], font_size: 12.0 }), &meta("t")).unwrap();
+    set_contents(&mut doc, 0, t, "你好", &meta("")).unwrap();
+    let d = &list(&doc, 0)[t];
+    assert_eq!(text(d, b"Contents"), "你好");
+    if pdfcraft_fonts::document_japanese_font().is_none() {
+        assert_eq!(pdfcraft_fonts::undrawn_mark(d), Some('你'), "no fallback to draw with: marked, as ever");
+        assert!(ap_content(&doc, d).contains("/Helv 12 Tf"), "the standard fonts draw the `?`s");
+        return;
+    }
+    assert_eq!(pdfcraft_fonts::undrawn_mark(d), None);
+    assert_eq!(appearance::undrawable_text(d), None, "drawable text is not refused");
+    let ap = ap_content(&doc, d);
+    assert!(ap.contains("/PCJp"), "the generated font is in the appearance: {ap}");
+    assert!(!ap.contains("/Helv"), "{ap}");
+    // Each wrapped line keeps its typing order in an ActualText span, drawn as generated codes.
+    assert!(ap.contains("/Span <</ActualText <FEFF4F60>>> BDC"), "{ap}");
+    assert!(ap.contains("/Span <</ActualText <FEFF597D>>> BDC"), "{ap}");
+    // The box fits both wrapped lines: 2 lines * 12 * 1.2, padding 2 + border 2 on a side, 2 slack.
+    let r = rect(d);
+    assert!((r[3] - r[1] - 38.8).abs() < 0.05, "rect {r:?}");
+}
+
+/// The display copy — a read-only build, with no document to add font objects to — keeps drawing
+/// `?` where the standard fonts can't, the way it always has; it is never saved into the file.
+/// The copy the editor draws into (with the document) is the one that gets the Type 3 fonts.
+#[test]
+fn a_display_build_still_draws_cjk_comment_text_in_the_standard_fonts() {
+    let mut d = Dict::new();
+    d.set(b"Subtype".to_vec(), Object::name("FreeText"));
+    d.set(b"Rect".to_vec(), Object::Array([100.0, 300.0, 300.0, 330.0].into_iter().map(Object::Real).collect()));
+    d.set(b"DA".to_vec(), PdfString::literal(b"0 g /Helv 12 Tf".to_vec()));
+    d.set(b"Contents".to_vec(), PdfString::text("欢迎"));
+    let stream = appearance::build(&d).expect("an appearance");
+    let raw = String::from_utf8_lossy(&stream.decoded().unwrap()).into_owned();
+    assert!(raw.contains("/Helv 12 Tf") && !raw.contains("PCJp"), "{raw}");
+    assert!(raw.contains("(??) Tj"), "the characters the fonts can't draw show as `?`: {raw}");
+}
+
 /// The rectangle a text box needs for `text` (the appearance's padding plus the 2 pt slack):
 /// the wrap width and top edge stay, the height fits the wrapped lines.
 fn expected_box(top: f64, w: f64, text: &str, size: f64, border: f64) -> [f64; 4] {
@@ -1188,20 +1234,29 @@ fn drawings_resize_by_scaling_their_strokes() {
 }
 
 /// Comment text the standard fonts can't draw is kept, as Acrobat keeps it: a text box, Fill & Sign
-/// text or a dynamic stamp's by-line is added with its text as typed, its appearance draws `?` for
-/// those characters, and the comment is marked with the first one (cleared once all of it can be
-/// drawn). A comment another program drew with a font that has those characters keeps that
-/// appearance: a restyle is refused rather than replace it with `?`, while new text is taken.
+/// text or a dynamic stamp's by-line is added with its text as typed. With craft-fonts the Type 3
+/// fallback draws those characters and nothing is marked; without them the appearance draws `?`
+/// and the comment is marked with the first one (cleared once all of it can be drawn). A comment
+/// another program drew with a font that has those characters is redrawn honestly where the
+/// fallback can draw it; where nothing can, its appearance is kept and a restyle refused rather
+/// than replace it with `?`, while new text is always taken.
 #[test]
 fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
+    let fonts = pdfcraft_fonts::document_japanese_font().is_some();
     let mut doc = fixture();
     let mark = |doc: &Document, i: usize| pdfcraft_fonts::undrawn_mark(&list(doc, 0)[i]);
     let mut boxed = new(0, Shape::TextBox { rect: [100.0, 600.0, 300.0, 650.0], font_size: 12.0 });
     boxed.contents = "签名 Ada".into();
     let t = add_annotation(&mut doc, &boxed, &meta("t")).unwrap();
     assert_eq!(text(&list(&doc, 0)[t], b"Contents"), "签名 Ada");
-    assert!(ap_content(&doc, &list(&doc, 0)[t]).contains("(?? Ada)"), "{}", ap_content(&doc, &list(&doc, 0)[t]));
-    assert_eq!(mark(&doc, t), Some('签'));
+    if fonts {
+        let ap = ap_content(&doc, &list(&doc, 0)[t]);
+        assert!(ap.contains("/PCJp") && !ap.contains("(?? Ada)"), "drawn with the fallback: {ap}");
+        assert_eq!(mark(&doc, t), None);
+    } else {
+        assert!(ap_content(&doc, &list(&doc, 0)[t]).contains("(?? Ada)"), "{}", ap_content(&doc, &list(&doc, 0)[t]));
+        assert_eq!(mark(&doc, t), Some('签'));
+    }
     let typed = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 };
     let f = add_annotation(
         &mut doc,
@@ -1209,7 +1264,8 @@ fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
         &meta("x"),
     )
     .unwrap();
-    assert_eq!(mark(&doc, f), Some('张'));
+    // Typewriter text is a comment's own text, so it takes the fallback.
+    assert_eq!(mark(&doc, f), if fonts { None } else { Some('张') });
     let stamp =
         Shape::Stamp { rect: [100.0, 100.0, 260.0, 142.0], stamp: StampKind::DynApproved, by: Some("By 张三 at 2:14 pm, Oct 02, 2026".into()) };
     let s = add_annotation(
@@ -1218,14 +1274,16 @@ fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
         &meta("s"),
     )
     .unwrap();
+    // A stamp's by-line is stamped with the standard fonts either way, so it is marked even with
+    // the fallback: only a comment's own text takes it.
     assert_eq!(mark(&doc, s), Some('张'));
-    // Our own `?` appearance is redrawn on a restyle; Western European text clears the mark.
+    // Our own appearance is redrawn on a restyle; Western European text clears the mark.
     set_style(&mut doc, 0, t, Some([1.0, 0.0, 0.0]), None, None, None, &meta("")).unwrap();
-    assert_eq!(mark(&doc, t), Some('签'));
+    assert_eq!(mark(&doc, t), if fonts { None } else { Some('签') });
     set_contents(&mut doc, 0, t, "Zürich —\nGenève", &meta("")).unwrap();
     assert_eq!(mark(&doc, t), None);
     set_contents(&mut doc, 0, t, "签名", &meta("")).unwrap();
-    assert_eq!((text(&list(&doc, 0)[t], b"Contents").as_str(), mark(&doc, t)), ("签名", Some('签')));
+    assert_eq!((text(&list(&doc, 0)[t], b"Contents").as_str(), mark(&doc, t)), ("签名", if fonts { None } else { Some('签') }));
     // A text box another program drew (with a font that has 欢): a restyle keeps that appearance.
     let mut foreign = Dict::new();
     foreign.set(b"Type".to_vec(), Object::name("Annot"));
@@ -1248,16 +1306,26 @@ fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
     set_annots(&mut doc, page, on_page).unwrap();
     let k = list(&doc, 0).len() - 1;
     let before = list(&doc, 0)[k].clone();
-    let err = set_style(&mut doc, 0, k, Some([1.0, 0.0, 0.0]), Some(0.4), Some(6.0), None, &meta("")).unwrap_err();
-    assert!(matches!(&err, AnnotError::Undrawable(m) if m.contains("can't redraw") && m.contains("\"欢\" (U+6B22)")), "{err:?}");
-    assert_eq!(list(&doc, 0)[k], before, "a refused restyle keeps the colour, opacity, width and appearance");
-    let err = set_rect(&mut doc, 0, k, [40.0, 40.0, 180.0, 90.0], &meta("")).unwrap_err();
-    assert!(matches!(&err, AnnotError::Undrawable(_)), "{err:?}");
-    assert_eq!(list(&doc, 0)[k], before, "a refused resize keeps the rectangle");
-    // New text from the user is taken (and marked), as for any comment.
+    if fonts {
+        // The characters can be drawn, so the restyle redraws them instead of refusing.
+        set_style(&mut doc, 0, k, Some([1.0, 0.0, 0.0]), Some(0.4), Some(6.0), None, &meta("")).unwrap();
+        let ap = ap_content(&doc, &list(&doc, 0)[k]);
+        assert!(ap.contains("/PCJp"), "redrawn with the characters: {ap}");
+        assert_eq!(mark(&doc, k), None);
+        set_rect(&mut doc, 0, k, [40.0, 40.0, 180.0, 90.0], &meta("")).unwrap();
+    } else {
+        let err = set_style(&mut doc, 0, k, Some([1.0, 0.0, 0.0]), Some(0.4), Some(6.0), None, &meta("")).unwrap_err();
+        assert!(matches!(&err, AnnotError::Undrawable(m) if m.contains("can't redraw") && m.contains("\"欢\" (U+6B22)")), "{err:?}");
+        assert_eq!(list(&doc, 0)[k], before, "a refused restyle keeps the colour, opacity, width and appearance");
+        let err = set_rect(&mut doc, 0, k, [40.0, 40.0, 180.0, 90.0], &meta("")).unwrap_err();
+        assert!(matches!(&err, AnnotError::Undrawable(_)), "{err:?}");
+        assert_eq!(list(&doc, 0)[k], before, "a refused resize keeps the rectangle");
+    }
+    // New text from the user is taken (marked only without the fallback), as for any comment.
     set_contents(&mut doc, 0, k, "欢迎光临", &meta("")).unwrap();
-    assert_eq!(mark(&doc, k), Some('欢'));
-    // One without an appearance is shown in the display copy only; drawing it marks it.
+    assert_eq!(mark(&doc, k), if fonts { None } else { Some('欢') });
+    // One without an appearance is shown in the display copy only; drawing it into the document
+    // marks it only without the fallback.
     let mut bare = Dict::new();
     bare.set(b"Type".to_vec(), Object::name("Annot"));
     bare.set(b"Subtype".to_vec(), Object::name("FreeText"));
@@ -1272,7 +1340,7 @@ fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
     assert!(shown.get(b).as_dict().unwrap().contains(b"AP"), "displayed anyway");
     assert!(!doc.get(b).as_dict().unwrap().contains(b"AP"), "the document itself is unchanged");
     set_appearance(&mut doc, b).unwrap();
-    assert_eq!(doc.get(b).as_dict().and_then(pdfcraft_fonts::undrawn_mark), Some('欢'));
+    assert_eq!(doc.get(b).as_dict().and_then(pdfcraft_fonts::undrawn_mark), if fonts { None } else { Some('欢') });
     // Kept through a save.
     let doc = reopen(&doc);
     assert_eq!(text(&list(&doc, 0)[t], b"Contents"), "签名");

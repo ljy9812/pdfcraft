@@ -60,8 +60,12 @@ fn craft_fonts(dir: &std::path::Path) -> Result<String, String> {
         // "one user-installed system font" channel does not exist in the browser. Stays within the
         // 25 MiB hosting limit (~13 MiB wasm + ~4.4 MiB face).
         let hans = scripts.split(',').any(|s| s.trim() == "Hans");
-        let web_face =
-            (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || telugu || hebrew || hans || scripts.split(',').any(|s| s.trim() == "Thai");
+        let web_face = (*family == "BIZ UDPGothic" && *style == "Regular")
+            || arabic
+            || telugu
+            || hebrew
+            || hans
+            || scripts.split(',').any(|s| s.trim() == "Thai");
         if wasm && !web_face {
             continue;
         }
