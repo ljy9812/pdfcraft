@@ -11,6 +11,9 @@ const URL_PREFIX: string = 'https://local.pdfcraft/';
 const RAW_PREFIX: string = 'web/';
 const CHUNK_SIZE: number = 262144; // 256 KiB per message port frame (base64)
 const URL_PATTERN: string = 'https://local.pdfcraft/*';
+// Manual-test affordance switch: the floating '中文输入' inject button (IME
+// round vehicle). Off for demo builds; flip to true for MANUAL_TEST_CASES.md.
+const IME_INJECT_ENTRY: boolean = false;
 
 interface ExportMsg {
   t: string;
@@ -61,8 +64,56 @@ const START_SCRIPT: string = `(function() {
     if (e.ports && e.ports.length > 0) {
       window.__pc_port = e.ports[0];
       console.log('[pc] port received');
+      hookPortReceive(window.__pc_port);
     }
   });
+  // Native-input injection: {t:'inject', s:<string>, b:<base64 utf8>}. The
+  // ArkWeb embedded-webview IME channel replaces CJK with U+FF1F before any
+  // JS sees it, so hanzi arrive through this port instead. We append to the
+  // eframe text agent input and dispatch a synthetic non-composing 'insertText'
+  // input event: eframe turns the value delta into an egui Text event.
+  function hookPortReceive(port) {
+    try {
+      port.onmessage = function(ev) {
+        var m;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (!m || m.t !== 'inject') { return; }
+        var text = m.s || '';
+        if (m.b) {
+          try {
+            var bin = atob(m.b);
+            var u8 = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) { u8[i] = bin.charCodeAt(i); }
+            var dec = new TextDecoder('utf-8').decode(u8);
+            if (dec && (!m.s || (m.s.indexOf('\\uFF1F') !== -1 && dec.indexOf('\\uFF1F') === -1))) {
+              text = dec;
+            }
+          } catch (e) {}
+        }
+        var agent = null;
+        try {
+          var inputs = document.querySelectorAll('input[type=text]');
+          for (var k = 0; k < inputs.length; k++) {
+            if (inputs[k].style && inputs[k].style.opacity === '0') { agent = inputs[k]; break; }
+          }
+          if (!agent && inputs.length > 0) { agent = inputs[0]; }
+        } catch (e) {}
+        if (!agent) {
+          if (window.__imeRec) { window.__imeRec('[inject] no text agent input found'); }
+          return;
+        }
+        agent.focus();
+        agent.value = agent.value + text;
+        agent.dispatchEvent(new InputEvent('input', {
+          inputType: 'insertText', data: text, isComposing: false, bubbles: false
+        }));
+        if (window.__imeRec) {
+          window.__imeRec('[inject] +' + text.length + ' chars, agent value: ' + agent.value);
+        }
+      };
+      port.start();
+    } catch (e) { console.log('[pc] port receive hook failed'); }
+  }
   // Path 1: real user clicks on attached a[download] anchors.
   document.addEventListener('click', function(e) {
     var t = e.target;
@@ -136,8 +187,16 @@ function mimeFor(path: string): string {
 struct Index {
   controller: webview.WebviewController = new webview.WebviewController();
   private sendPort: webview.WebMessagePort | null = null;
+  private recvPort: webview.WebMessagePort | null = null;
   private exportName: string = '';
   private exportChunks: string[] = [];
+  // Native-input injection (ArkWeb IME mangles CJK to U+FF1F in the embedded
+  // webview before any JS sees it, so hanzi must enter through the port).
+  // Entry button is gated off: demo rounds don't need the floating button; the
+  // inject machinery stays for the MANUAL_TEST_CASES.md IME round — flip
+  // IME_INJECT_ENTRY to true to bring the button and panel back.
+  @State imeOpen: boolean = false;
+  @State imeText: string = '';
 
   private toast(msg: string): void {
     this.getUIContext().getPromptAction().showToast({ message: msg });
@@ -233,6 +292,31 @@ struct Index {
       this.onExportMessage(msg);
     });
     this.sendPort = ports[0];
+    this.recvPort = recv;
+  }
+
+  // Send the text typed in the native ArkUI input to the page's eframe text
+  // agent through the message port: dual channel (raw string + base64 UTF-8
+  // bytes); the page-side hook self-validates and picks the clean one.
+  private injectText(text: string): void {
+    if (text.length === 0) {
+      return;
+    }
+    let b64: string = '';
+    try {
+      const bytes: Uint8Array = util.TextEncoder.create().encodeInto(text);
+      b64 = new util.Base64Helper().encodeToStringSync(bytes);
+    } catch (e) {
+      hilog.warn(0x0000, TAG, 'inject encode failed');
+    }
+    try {
+      this.recvPort?.postMessageEvent(JSON.stringify({ t: 'inject', s: text, b: b64 }));
+      hilog.info(0x0000, TAG, 'inject posted: ' + text.length + ' chars');
+      this.toast('已注入 ' + text.length + ' 字');
+    } catch (e) {
+      hilog.warn(0x0000, TAG, 'inject post failed');
+      this.toast('注入失败');
+    }
   }
 
   private onExportMessage(msg: webview.WebMessage): void {
@@ -296,8 +380,10 @@ struct Index {
   }
 
   build() {
-    Column() {
-      Web({ src: MAIN_URL, controller: this.controller })
+    Stack({ alignContent: Alignment.Center }) {
+      Stack({ alignContent: Alignment.BottomEnd }) {
+        Column() {
+          Web({ src: MAIN_URL, controller: this.controller })
         .fileAccess(true)
         .domStorageAccess(true)
         .javaScriptAccess(true)
@@ -371,6 +457,58 @@ struct Index {
         .backgroundColor('#141414')
         .width('100%')
         .height('100%')
+        }
+        .width('100%')
+        .height('100%')
+        // Native-input entry: the ArkWeb IME channel mangles CJK in the
+        // embedded webview, so hanzi go through this ArkUI input + port.
+        // Hidden behind IME_INJECT_ENTRY (demo rounds don't show the button).
+        if (IME_INJECT_ENTRY) {
+          Button('中文输入')
+            .fontSize(13)
+            .fontColor(Color.White)
+            .backgroundColor('#3574F0')
+            .borderRadius(16)
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .margin(14)
+            .opacity(0.85)
+            .onClick(() => {
+              this.imeText = '';
+              this.imeOpen = true;
+            })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      if (this.imeOpen) {
+        Column({ space: 12 }) {
+          Text('原生输入：输入法汉字正常，确定后注入编辑框')
+            .fontSize(14)
+            .fontColor('#333')
+          TextArea({ text: this.imeText, placeholder: '在这里输入文字（支持中文）' })
+            .onChange((v: string) => {
+              this.imeText = v;
+            })
+            .height(96)
+            .fontSize(18)
+          Row({ space: 12 }) {
+            Button('取消')
+              .onClick(() => {
+                this.imeOpen = false;
+              })
+            Button('注入')
+              .backgroundColor('#3574F0')
+              .onClick(() => {
+                this.imeOpen = false;
+                this.injectText(this.imeText);
+              })
+          }
+        }
+        .padding(16)
+        .borderRadius(12)
+        .backgroundColor(Color.White)
+        .width('72%')
+      }
     }
     .width('100%')
     .height('100%')

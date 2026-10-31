@@ -20,3 +20,4 @@
 # Local material (signing fragments, downloaded zips) — never commit
 /downloads/
 /local/
+!/entry/src/main/resources/rawfile/web/index.html
