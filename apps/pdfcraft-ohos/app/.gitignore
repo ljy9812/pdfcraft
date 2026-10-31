@@ -1,0 +1,12 @@
+/node_modules
+/oh_modules
+/.preview
+/build
+/.cxx
+/.test
+/.hvigor
+/.appanalyzer
+/.idea
+/hvigor-build.log
+/r2-run.log
+*.json.bak

@@ -1,0 +1,67 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 290 >>
+stream
+BT /F1 16 Tf 20 372 Td (OHOS p2 sample) Tj ET
+0 0 1 rg
+20 290 260 60 re f
+1 0 0 rg
+20 200 260 60 re f
+0 0.7 0 rg
+20 110 260 60 re f
+0 g 2 w
+20 30 m 280 95 l S
+1 1 0 rg
+60 30 m 76 30 78 21 78 30 c 78 39 76 48 60 48 c 44 48 42 39 42 30 c 42 21 44 30 60 30 c f
+0 0 0 rg 1 w
+230 300 50 50 re S
+
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 7 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 280 >>
+stream
+BT /F1 16 Tf 20 372 Td (page two - vector fan) Tj ET
+0.9 0.2 0.2 rg
+150 200 m 30 50 l 150 120 l f
+0.2 0.2 0.9 rg
+150 200 m 150 120 l 270 50 l f
+0.2 0.9 0.2 rg
+150 200 m 270 50 l 270 340 l f
+0.9 0.8 rg
+150 200 m 270 340 l 30 340 l f
+0 g 1.5 w
+30 40 m 270 40 l 270 360 l 30 360 l s
+
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000588 00000 n 
+0000000685 00000 n 
+0000000811 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1142
+%%EOF

@@ -1,0 +1,49 @@
+[package]
+name = "openharmony-ability"
+version = "1.0.0-beta.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Binding Rust application on Harmony with Ability"
+
+[features]
+# `updater` is a core-privileged capability (see `OpenHarmonyApp::updater()`).
+# Retained in default features: the updater plugin consumes it via
+# `tauri::ohos::APP` without an explicit feature declaration, and the tauri
+# crate's dependency (default features on) propagates the default set. Moving
+# it out requires synchronizing tauri/crates/tauri/Cargo.toml.
+default = ["log", "updater", "window"]
+account = []
+clipboard = ["log"]
+log = ["dep:log", "dep:ohos-hilog-binding"]
+updater = []
+window = []
+global_shortcut = []
+fault-injection = []
+
+[dependencies]
+# common dependencies
+futures-channel = { workspace = true }
+crossbeam-channel = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+png = { workspace = true }
+
+log = { version = "0.4", optional = true }
+
+# for napi binding
+napi-ohos = { workspace = true, features = ["napi8"] }
+napi-derive-ohos = { workspace = true }
+
+# for xcomponent native render
+ohos-arkui-binding = { workspace = true, features = ["napi"] }
+ohos-xcomponent-binding = { workspace = true }
+ohos-xcomponent-sys = { workspace = true }
+ohos-arkui-sys = { workspace = true }
+ohos-ime-binding = { workspace = true }
+ohos-display-binding = { workspace = true }
+ohos-resource-manager-binding = { workspace = true }
+
+# for clipboard feature
+ohos-hilog-binding = { workspace = true, optional = true }

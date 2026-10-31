@@ -10,7 +10,9 @@
 //! Helvetica font with WinAnsi encoding; line breaking uses [`text_width`], an approximation of
 //! Helvetica's proportions by character class (no font program or metrics file is bundled).
 
-use pdfcraft_cos::{Dict, Object, PdfString, Stream};
+use std::collections::HashMap;
+
+use pdfcraft_cos::{Dict, Document, Object, PdfString, Stream};
 use pdfcraft_fonts::{first_undrawable, literal, win_ansi};
 pub use pdfcraft_fonts::{helvetica_width as text_width, wrap};
 
@@ -300,11 +302,68 @@ fn text_turn(d: &Dict) -> i64 {
     d.get(b"PCTextRotate").and_then(Object::as_int).unwrap_or(0).rem_euclid(360) / 90 * 90
 }
 
+/// The FreeText branch's text in a Type 3 fallback font, the way the Add-text tool draws page
+/// content: the content after the box's fill and border (the caller prefixes those) and the
+/// resource dictionary holding the generated fonts. Every line keeps its typing order in an
+/// ActualText span, and each character shows as a code of a generated font, with a ToUnicode map
+/// for copy and search. `None` when this build has no face with the text's glyphs.
+#[allow(clippy::too_many_arguments)]
+fn freetext_type3(doc: &mut Document, text: &str, rect: [f64; 4], color: Rgb, size: f64, q: i64, pad: f64, width: f64) -> Option<(Vec<u8>, Dict)> {
+    // A comment is drawn with the sans document face, whichever face its text takes.
+    let flat: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    // The form's own font namespace: only the generated fonts land in it, so their names can't
+    // collide with another resource's.
+    let mut fonts = Dict::new();
+    let fallback = pdfcraft_fonts::type3::type3_font(doc, &mut fonts, &flat, false, false, pdfcraft_fonts::type3::MAX_TYPE3_GLYPHS).ok()?;
+    // The advance each character is drawn with, from the generated font's own widths.
+    let mut advances: HashMap<char, f64> = HashMap::new();
+    for (ch, w) in &fallback.widths {
+        advances.insert(*ch, w * size);
+    }
+    let mut out = format!("{} {} {} {} re W n\nBT\n{}", n(rect[0]), n(rect[1]), n(rect[2] - rect[0]), n(rect[3] - rect[1]), rg(color)).into_bytes();
+    // Paragraphs split on line breaks; each wraps character by character, the way CJK is set.
+    let laid: Vec<String> = text.split(['\n', '\r']).flat_map(|para| pdfcraft_fonts::type3::cjk_wrap(para, width, &advances)).collect();
+    let mut y = rect[3] - pad - size * 0.9;
+    for line in &laid {
+        if y < rect[1] - size {
+            break;
+        }
+        let logical: String = line.encode_utf16().map(|u| format!("{u:04X}")).collect();
+        out.extend(format!("/Span <</ActualText <FEFF{logical}>>> BDC\n").bytes());
+        let chars: Vec<(char, f64)> = line.chars().filter_map(|c| advances.get(&c).map(|w| (c, *w))).collect();
+        let lw: f64 = chars.iter().map(|(_, w)| *w).sum();
+        let x = match q {
+            1 => rect[0] + pad + (width - lw) / 2.0,
+            2 => rect[2] - pad - lw,
+            _ => rect[0] + pad,
+        };
+        let mut pen = x;
+        let mut current: Option<&str> = None;
+        for (ch, cw) in chars {
+            let Some(&(font, code)) = fallback.codes.get(&ch) else { continue };
+            let Some(name) = fallback.names.get(font) else { continue };
+            if current != Some(name.as_str()) {
+                out.extend(format!("/{name} {} Tf\n", n(size)).bytes());
+                current = Some(name.as_str());
+            }
+            out.extend(format!("1 0 0 1 {} {} Tm\n", n(pen), n(y)).bytes());
+            out.extend(literal(&[code]));
+            out.extend_from_slice(b" Tj\n");
+            pen += cw;
+        }
+        out.extend_from_slice(b"EMC\n");
+        y -= size * 1.2;
+    }
+    out.extend_from_slice(b"ET\n");
+    Some((out, fonts))
+}
+
 /// The first text [`build`] would draw in the standard fonts (Helvetica, WinAnsiEncoding) that
 /// they can't, which would come out as `?`: what it is (for the message) and the character. The
 /// text of a text box, callout or Fill & Sign text, a line's caption, a measurement's label, a
-/// dynamic stamp's "By …" line, and a redaction mark's overlay text (drawn when it is applied). `None` when all of
-/// it can be drawn.
+/// dynamic stamp's "By …" line, and a redaction mark's overlay text (drawn when it is applied). A
+/// comment's text is drawn with the Type 3 fallback when the standard fonts can't, so only a
+/// character the fallback faces lack would come out as `?`. `None` when all of it can be drawn.
 pub fn undrawable_text(d: &Dict) -> Option<(&'static str, char)> {
     let text = |key: &[u8]| d.get(key).and_then(Object::as_string).map(PdfString::to_text);
     let (what, text) = match d.name(b"Subtype")? {
@@ -316,6 +375,9 @@ pub fn undrawable_text(d: &Dict) -> Option<(&'static str, char)> {
         b"Redact" => ("the redaction's overlay text", text(b"OverlayText")?),
         _ => return None,
     };
+    if d.name(b"Subtype") == Some(b"FreeText") {
+        return Some((what, pdfcraft_fonts::type3::first_undrawable_fallback(&text, false, false)?));
+    }
     Some((what, first_undrawable(&text)?))
 }
 
@@ -372,6 +434,18 @@ fn caret_layout(d: &Dict, rect: [f64; 4]) -> ([f64; 4], Option<(f64, f64, f64)>)
 /// Text the standard fonts can't draw comes out as `?`: [`undrawable_text`] says which, and
 /// [`crate::set_appearance`] marks the annotation with it (`pdfcraft_fonts::UNDRAWN_MARK`).
 pub fn build(d: &Dict) -> Option<Stream> {
+    build_with(None, d)
+}
+
+/// [`build`], with the document writeable so a comment's text can be set in a Type 3 fallback font
+/// (the way the Add-text tool draws page content) instead of coming out as `?`: the generated
+/// fonts are added to `doc` and named in the appearance's resources. When this build has no face
+/// with the text's glyphs, the standard fonts' `?` drawing takes over, as [`build`] alone draws it.
+pub fn build_with_fonts(doc: &mut Document, d: &Dict) -> Option<Stream> {
+    build_with(Some(doc), d)
+}
+
+fn build_with(doc: Option<&mut Document>, d: &Dict) -> Option<Stream> {
     // Imported measurement appearances may include leaders, captions and formatting that
     // this builder cannot reproduce. Preserve them rather than silently losing detail.
     if d.contains(b"Measure") && !d.contains(b"PCMeasureValue") {
@@ -846,6 +920,22 @@ pub fn build(d: &Dict) -> Option<Stream> {
             let pad = 2.0 + bw;
             let width = (rect[2] - rect[0] - 2.0 * pad).max(1.0);
             let q = d.int(b"Q").unwrap_or(0);
+            // Text the standard fonts can't draw, with the document writeable: the Type 3 fallback
+            // the Add-text tool draws page content with, so a comment keeps its characters (None
+            // without craft-fonts or with a glyph no face has: the `?` below, and the mark).
+            if let Some(doc) = doc
+                && text.chars().any(|ch| !pdfcraft_fonts::win_ansi_encodable(ch))
+                && let Some((body, fonts)) = freetext_type3(doc, &text, rect, text_color, size, q, pad, width)
+            {
+                let mut out = c.into_bytes();
+                out.extend_from_slice(&body);
+                res.set(b"Font".to_vec(), Object::Dict(fonts));
+                let mut stream = form(full, &out, res);
+                if let Some(m) = matrix {
+                    stream.dict.set(b"Matrix".to_vec(), Object::Array(m.iter().copied().map(Object::Real).collect()));
+                }
+                return Some(stream);
+            }
             c.push_str(&format!(
                 "{} {} {} {} re W n\nBT\n/Helv {} Tf\n{}",
                 n(rect[0]),

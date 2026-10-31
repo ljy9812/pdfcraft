@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "pdfcraft-ohos entry module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "pdfcraft-ohos: OHOS PdfCraft host"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "PdfCraft"
+    }
+  ]
+}

@@ -1,2 +1,16 @@
 [alias]
 xtask = "run -p xtask --"
+
+# OHOS cross-compile channel (ohos-craft-p2, task 3.5; adapted from the
+# egui-repo ohos-spike, ohos-winit-p1 device-proven provenance).
+# The wrapper centralizes SDK paths — switch SDK by editing the wrapper only.
+# Note: cargo check does not link; the linker only takes effect at cargo build.
+# Relative paths resolve against the config parent (pdfcraft root), so the
+# tree relocates with the checkout.
+# Host-face invariant: only [target.aarch64-unknown-linux-ohos] sections below
+# — host commands (no --target) never consult them.
+[target.aarch64-unknown-linux-ohos]
+linker = "ndk\\aarch64-unknown-linux-ohos-clang.cmd"
+# Test runner: host test binaries cannot link (ohos-*-sys #[link] directives
+# have no Windows import libs) — push to device and relay results instead.
+runner = "ndk\\hdc-test-runner.cmd"

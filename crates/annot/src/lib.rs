@@ -1452,15 +1452,31 @@ fn redraw_or_restore(doc: &mut Document, r: ObjRef, before: Dict) -> Result<(), 
 fn draw_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
     let d = annot_dict(doc, r);
     let subtype = String::from_utf8_lossy(d.name(b"Subtype").unwrap_or_default()).into_owned();
-    let Some(stream) = build_appearance(doc, &d) else { return Err(AnnotError::Unsupported(subtype)) };
+    let Some(stream) = build_appearance_into(doc, &d) else { return Err(AnnotError::Unsupported(subtype)) };
     apply_appearance(doc, r, &d, stream)
 }
 
-/// Draw the appearance for an annotation dictionary: the expensive half of [`set_appearance`].
-/// Pure from the dictionary and the objects it points at, so [`AppearanceCache`] can reuse it.
+/// Draw the appearance for an annotation dictionary, with the document's objects writeable: a
+/// comment whose text the standard fonts can't draw is set in a Type 3 fallback font instead. The
+/// expensive half of [`set_appearance`].
+fn build_appearance_into(doc: &mut Document, d: &Dict) -> Option<Stream> {
+    let mut stream = appearance::build_with_fonts(doc, d)?;
+    retain_picture_matrix(doc, d, &mut stream);
+    Some(stream)
+}
+
+/// The appearance for an annotation dictionary, pure from the dictionary and the objects it points
+/// at, so [`AppearanceCache`] can reuse it. Text beyond WinAnsi falls back to the standard fonts'
+/// `?`: the display copy is never saved, and an annotation with an appearance of its own (which
+/// the edit path drew with the Type 3 fallback) keeps it rather than being redrawn here.
 fn build_appearance(doc: &Document, d: &Dict) -> Option<Stream> {
     let mut stream = appearance::build(d)?;
-    // Picture-stamp restyling must retain the placement's page-axis correction.
+    retain_picture_matrix(doc, d, &mut stream);
+    Some(stream)
+}
+
+/// Picture-stamp restyling must retain the placement's page-axis correction.
+fn retain_picture_matrix(doc: &Document, d: &Dict, stream: &mut Stream) {
     if d.get(b"PCPicture").is_some() {
         let matrix = d.get(b"AP").and_then(|ap| {
             let ap = doc.resolve(ap);
@@ -1472,7 +1488,6 @@ fn build_appearance(doc: &Document, d: &Dict) -> Option<Stream> {
             stream.dict.set(b"Matrix".to_vec(), matrix);
         }
     }
-    Some(stream)
 }
 
 /// Store a built appearance on the annotation: the cheap half of [`set_appearance`].
@@ -1770,7 +1785,23 @@ fn fitted_box(doc: &Document, r: ObjRef, text: &str) -> Option<[f64; 4]> {
         let longest = text.lines().map(|l| appearance::text_width(l, size)).fold(0.0, f64::max);
         (longest + 2.0 * pad + 4.0).clamp(40.0, 300.0)
     };
-    let lines = appearance::wrap(text, size, (w - 2.0 * pad).max(1.0)).len().max(1) as f64;
+    // A re-fit measures the lines that will actually be drawn. Text the Type 3 fallback draws is
+    // wrapped at its own advances (full-width characters), not the `?`-widths the standard fonts
+    // would put there, or the box would be fitted one line short and clip the last line. `false`
+    // here is the sans document face, which the appearance draws it with (see `freetext_type3`).
+    let type3_advances = if text.chars().any(|ch| !pdfcraft_fonts::win_ansi_encodable(ch)) {
+        pdfcraft_fonts::type3::fallback_advances(text, false, false)
+    } else {
+        None
+    };
+    let lines = match type3_advances {
+        Some(unit) => {
+            let advances: std::collections::HashMap<char, f64> = unit.iter().map(|(c, w)| (*c, w * size)).collect();
+            text.split(['\n', '\r']).flat_map(|p| pdfcraft_fonts::type3::cjk_wrap(p, (w - 2.0 * pad).max(1.0), &advances)).count()
+        }
+        None => appearance::wrap(text, size, (w - 2.0 * pad).max(1.0)).len(),
+    }
+    .max(1) as f64;
     Some([x0, top - lines * size * 1.2 - 2.0 * pad - 2.0, x0 + w, top])
 }
 

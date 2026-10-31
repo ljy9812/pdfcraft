@@ -638,7 +638,7 @@ pub(super) fn rewrite_styled_block(
                         // Keep the old per-character face choice: a serif Japanese character
                         // and a Cyrillic character may need different faces even in one style.
                         // Hebrew uses the separate RTL path before reaching this writer.
-                        let (faces, _) = type3_faces(&s, family, source.bold)?;
+                        let (faces, _) = type3_faces(&s, family == crate::added::Family::Times, source.bold)?;
                         let face =
                             fallback_face(&faces, &[ch], |face, ch| japanese_glyph_from(face, ch).is_ok()).ok_or_else(|| no_fallback_font(&s))?;
                         let index = fallback_groups.iter().position(|group| std::ptr::eq(group.face, face)).unwrap_or_else(|| {

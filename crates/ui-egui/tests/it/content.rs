@@ -332,7 +332,8 @@ fn a_picture_on_the_clipboard_is_pasted_onto_the_page() {
 }
 
 /// #125: text the standard fonts can't draw stays in the editor with a warning instead of being
-/// written to the page as `?` (or lost).
+/// written to the page as `?` (or lost). With craft-fonts the Type 3 fallback draws it, so the
+/// text is added to the page intact.
 #[test]
 fn text_the_standard_fonts_cant_draw_stays_in_the_editor() {
     let _gpu = gpu();
@@ -343,6 +344,12 @@ fn text_the_standard_fonts_cant_draw_stays_in_the_editor() {
     click(&mut h, p);
     h.event(egui::Event::Text("Hello 世界".into()));
     h.run_steps(2);
+    if pdfcraft_fonts::document_japanese_font().is_some() {
+        h.get_by_label("Done adding text").click();
+        h.run_steps(3);
+        assert_eq!(texts(&h), ["Hello 世界"], "the fallback draws it, so it goes on the page");
+        return;
+    }
     h.get_by_label_contains("can't draw “世” (U+4E16)");
     if let Ok(dir) = std::env::var("PDFCRAFT_SHOTS") {
         h.render().unwrap().save(format!("{dir}/undrawable-text.png")).unwrap();

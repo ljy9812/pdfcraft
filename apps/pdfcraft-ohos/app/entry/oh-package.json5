@@ -1,0 +1,10 @@
+{
+  "name": "entry",
+  "version": "0.1.0",
+  "description": "pdfcraft-ohos entry: minimal shell that mounts the native module via DefaultXComponent.",
+  "main": "",
+  "dependencies": {
+    "libpdfcraft_ohos.so": "file:./src/main/cpp/types/libpdfcraft_ohos",
+    "@ohos-rs/ability": "file:../../../../vendor/openharmony-ability/ability.har"
+  }
+}

@@ -8719,3 +8719,54 @@ fn need_appearances_buttons_are_displayed_from_their_captions() {
         assert!(ink(&shown, inside(x, 100)) > 700, "the file's square at {x}");
     }
 }
+/// A comment's CJK text is drawn into its appearance with the Type 3 fallback, so the page
+/// raster shows the characters and nothing is reported. A character no face draws (an
+/// unassigned code point) still draws `?` and is reported, as for any comment.
+#[test]
+fn a_comment_with_cjk_text_draws_it_and_reports_nothing() {
+    if pdfcraft_fonts::document_japanese_font().is_none() {
+        return;
+    }
+    let (mut s, id) = session_with(1);
+    let shape = Shape::TextBox { rect: [20.0, 200.0, 120.0, 230.0], font_size: 12.0 };
+    s.apply(
+        id,
+        Edit::AddAnnotation(NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: "你好".into(), author: "Test".into() }),
+    )
+    .unwrap();
+    assert!(s.get(id).unwrap().edit_notices.is_empty(), "nothing to report for characters the fallback draws");
+    // The page raster shows the characters' ink, not just the box's border: an empty comment of
+    // the same shape stands in for the border (and anything else the box itself paints).
+    let ink = {
+        let doc = s.get(id).unwrap();
+        let mut renderer = pdfcraft_render::PageRenderer::new(doc.bytes.clone(), doc.config.clone());
+        let rendered = renderer.render(pdfcraft_render::RenderRequest { page: 0, scale: 2.0, ..Default::default() });
+        assert!(rendered.error.is_none(), "{:?}", rendered.error);
+        rendered.rgba
+    };
+    let border_only = {
+        let (mut c, cid) = session_with(1);
+        let shape = Shape::TextBox { rect: [20.0, 200.0, 120.0, 230.0], font_size: 12.0 };
+        c.apply(
+            cid,
+            Edit::AddAnnotation(NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: String::new(), author: "Test".into() }),
+        )
+        .unwrap();
+        let doc = c.get(cid).unwrap();
+        let mut renderer = pdfcraft_render::PageRenderer::new(doc.bytes.clone(), doc.config.clone());
+        renderer.render(pdfcraft_render::RenderRequest { page: 0, scale: 2.0, ..Default::default() }).rgba
+    };
+    let (b, bid) = session_with(1);
+    b.get(bid).unwrap();
+    let blank_doc = b.get(bid).unwrap();
+    let mut blank_renderer = pdfcraft_render::PageRenderer::new(blank_doc.bytes.clone(), blank_doc.config.clone());
+    let blank = blank_renderer.render(pdfcraft_render::RenderRequest { page: 0, scale: 2.0, ..Default::default() });
+    let diff = |rgba: &[u8]| rgba.iter().zip(blank.rgba.iter()).filter(|(a, b)| a != b).count();
+    let (text, bare) = (diff(&ink), diff(&border_only));
+    assert!(text > bare + 50, "the characters drew no ink ({text} vs {bare} pixels differ)");
+    // Editing in a character no face draws reports it (drawn `?`, marked).
+    s.apply(id, Edit::SetAnnotationContents { page: 0, index: 0, text: "\u{378}".into() }).unwrap();
+    let n = &s.get(id).unwrap().edit_notices;
+    assert_eq!(n.len(), 1, "{n:?}");
+    assert_eq!((n[0].field.as_deref(), n[0].page, n[0].ch), (None, 0, '\u{378}'));
+}

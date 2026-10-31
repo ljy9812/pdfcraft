@@ -711,7 +711,9 @@ fn flattening_keeps_an_undrawn_reply_to_a_flattened_comment() {
 /// Flattening never makes a `?` permanent: it refuses, changing nothing, a text box without an
 /// appearance whose text Helvetica can't draw (another program's), and a comment or form field
 /// whose appearance PdfCraft drew with `?` (marked `PCUndrawn`). A comment another program drew
-/// with a font that has those characters (an appearance, no mark) flattens as before.
+/// with a font that has those characters (an appearance, no mark) flattens as before. With
+/// craft-fonts the first refusal doesn't apply to text the Type 3 fallback faces can draw: the
+/// flatten draws it (the fallback font goes into the page), so it flattens honestly.
 #[test]
 fn flattening_refuses_what_would_bake_in_question_marks() {
     let page = stream("", " ");
@@ -730,12 +732,26 @@ fn flattening_refuses_what_would_bake_in_question_marks() {
         assert_eq!(write_incremental(&doc, &SaveOptions::default()).unwrap(), before, "a refused flatten changes nothing");
         assert!(pdfcraft_model::pages(&doc)[0].dict.contains(b"Annots"), "the annotation is still there");
     };
-    refused(
-        "<< /Type /Annot /Subtype /FreeText /Rect [10 10 150 40] /DA (0 g /Helv 12 Tf) /Contents <FEFF6B228FCE> /F 4 >>",
-        true,
-        false,
-        "a comment",
-    );
+    // A foreign text box without an appearance: refused without craft-fonts (flattening would
+    // bake `?` in); with them the Type 3 fallback draws the text, so it flattens.
+    if pdfcraft_fonts::document_japanese_font().is_some() {
+        let mut doc = build(&[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>",
+            &page,
+            "<< /Type /Annot /Subtype /FreeText /Rect [10 10 150 40] /DA (0 g /Helv 12 Tf) /Contents <FEFF6B228FCE> /F 4 >>",
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 140 30] /Length 0 >>\nstream\n\nendstream",
+        ]);
+        assert_eq!(flatten(&mut doc, &[0], true, false).unwrap(), 1, "the fallback draws the text the standard fonts can't");
+    } else {
+        refused(
+            "<< /Type /Annot /Subtype /FreeText /Rect [10 10 150 40] /DA (0 g /Helv 12 Tf) /Contents <FEFF6B228FCE> /F 4 >>",
+            true,
+            false,
+            "a comment",
+        );
+    }
     refused(
         "<< /Type /Annot /Subtype /FreeText /Rect [10 10 150 40] /DA (0 g /Helv 12 Tf) /Contents <FEFF6B228FCE> /F 4 /AP << /N 6 0 R >> /PCUndrawn <FEFF6B22> >>",
         true,
@@ -1258,6 +1274,144 @@ fn own(doc: &Document, index: usize) -> Vec<String> {
     names
 }
 
+/// The `PCJp`/`PCHe` Type 3 fonts in page `page`'s resources: (resource name, descriptor font
+/// name). Other names the page already uses are skipped.
+fn pcjp_fonts(doc: &Document, page: usize) -> Vec<(String, String)> {
+    let p = &pdfcraft_model::pages(doc)[page];
+    let Some(res) = p.dict.get(b"Resources").map(|r| doc.resolve(r)) else { return vec![] };
+    let Some(fonts) = res.as_dict().and_then(|r| r.get(b"Font")).map(|f| doc.resolve(f)) else { return vec![] };
+    fonts
+        .as_dict()
+        .unwrap()
+        .iter()
+        .filter(|(k, _)| k.starts_with(b"PCJp") || k.starts_with(b"PCHe"))
+        .filter_map(|(k, v)| {
+            let font = doc.resolve(v).as_dict()?.clone();
+            let desc = doc.resolve(font.get(b"FontDescriptor")?).as_dict()?.clone();
+            let name = String::from_utf8_lossy(desc.get(b"FontName")?.as_name()?).into_owned();
+            Some((String::from_utf8_lossy(k).into_owned(), name))
+        })
+        .collect()
+}
+
+/// How many `PCJp`/`PCHe` names page `page`'s font resources hold, taken or drawn.
+fn pcjp_name_count(doc: &Document, page: usize) -> usize {
+    let p = &pdfcraft_model::pages(doc)[page];
+    let Some(res) = p.dict.get(b"Resources").map(|r| doc.resolve(r)) else { return 0 };
+    let Some(fonts) = res.as_dict().and_then(|r| r.get(b"Font")).map(|f| doc.resolve(f)) else { return 0 };
+    fonts.as_dict().unwrap().iter().filter(|(k, _)| k.starts_with(b"PCJp") || k.starts_with(b"PCHe")).count()
+}
+
+/// The text of an item's ActualText spans, one per line, decoded from their UTF-16 hex.
+fn actual_text_spans(content: &str) -> Vec<String> {
+    content
+        .split("<FEFF")
+        .skip(1)
+        .filter_map(|s| s.split_once(">>").map(|(hex, _)| hex))
+        .map(|hex| {
+            (0..hex.len())
+                .step_by(4)
+                .filter_map(|i| u16::from_str_radix(&hex[i..i + 4], 16).ok().and_then(|u| char::from_u32(u32::from(u))))
+                .collect()
+        })
+        .collect()
+}
+
+/// CJK added text is drawn with the Type 3 fallback a replacement's retyped text uses, the whole
+/// item in one face: the Japanese face for what it covers, WenQuanYi for the Simplified-only code
+/// points it lacks (欢, which no Japanese face has). It reads back the same after a save and
+/// reopen, and its lines are kept in ActualText spans for copy and search.
+#[test]
+fn cjk_added_text_is_drawn_with_the_type3_fallback() {
+    if without_craft_fonts("cjk_added_text_is_drawn_with_the_type3_fallback") {
+        return;
+    }
+    for (text, face) in [("你好", "BIZUDPGothic"), ("欢迎", "WenQuanYiMicroHei")] {
+        let mut doc = fixture();
+        let t = AddedText { rect: [72.0, 600.0, 300.0, 700.0], text: text.into(), size: 14.0, ..AddedText::default() };
+        let n = add_content(&mut doc, 0, &Content::Text(t.clone())).unwrap();
+        let fonts = pcjp_fonts(&doc, 0);
+        assert_eq!(fonts.len(), 1, "{text}: {fonts:?}");
+        assert!(fonts[0].0.starts_with("PCJp") && fonts[0].1.contains(face), "{text}: {fonts:?}");
+        let obj = list_added(&doc).iter().filter(|a| a.page == 0).nth(n).unwrap().obj;
+        let content = String::from_utf8_lossy(&stream_bytes(&doc, &Object::Ref(obj)).unwrap()).into_owned();
+        let logical: String = text.encode_utf16().map(|u| format!("{u:04X}")).collect();
+        assert!(content.contains(&format!("/Span <</ActualText <FEFF{logical}>>")), "{text}: {content}");
+        assert_eq!(actual_text_spans(&content), vec![text.to_string()], "{text}: {content}");
+        // Reads back after a save and reopen (the rect is the box the laid-out text fills), and
+        // retypes.
+        let mut doc = reopen(&doc);
+        let text_of = |c: Option<Content>| match c {
+            Some(Content::Text(t)) => Some((t.text, t.size)),
+            _ => None,
+        };
+        let read = list_added(&doc).iter().filter(|a| a.page == 0).nth(n).map(|a| a.content.clone());
+        assert_eq!(text_of(read), Some((text.to_string(), 14.0)));
+        let retyped = AddedText { text: format!("{text}!"), ..t };
+        update_content(&mut doc, 0, n, &Content::Text(retyped)).unwrap();
+        let read = list_added(&doc).iter().filter(|a| a.page == 0).nth(n).map(|a| a.content.clone());
+        assert_eq!(text_of(read), Some((format!("{text}!"), 14.0)));
+    }
+}
+
+/// A CJK item wraps character by character (a Latin word breaks as one), and its Type 3 fonts go
+/// when it is updated or deleted, never taking a name the page already uses.
+#[test]
+fn cjk_items_wrap_character_by_character_and_keep_their_own_fonts() {
+    if without_craft_fonts("cjk_items_wrap_character_by_character_and_keep_their_own_fonts") {
+        return;
+    }
+    let mut doc = fixture();
+    // Every name the generated font could take, so the one it takes misses them all.
+    let mut taken = Dict::new();
+    taken.set(b"PCJp".to_vec(), Object::name("Taken"));
+    for num in 1..2_000 {
+        taken.set(format!("PCJp{num}").into_bytes(), Object::name("Taken"));
+    }
+    let mut res = Dict::new();
+    res.set(b"Font".to_vec(), Object::Dict(taken));
+    let page = pdfcraft_model::pages(&doc)[0].obj;
+    doc.update_dict(page, |d| d.set(b"Resources".to_vec(), Object::Dict(res))).unwrap();
+    // Six characters in a box two wide: three lines, one ActualText span each.
+    let t = AddedText { rect: [72.0, 600.0, 102.0, 700.0], text: "欢迎欢迎欢迎".into(), size: 14.0, ..AddedText::default() };
+    add_content(&mut doc, 0, &Content::Text(t.clone())).unwrap();
+    let obj = list_added(&doc).iter().find(|a| a.page == 0).unwrap().obj;
+    let content = String::from_utf8_lossy(&stream_bytes(&doc, &Object::Ref(obj)).unwrap()).into_owned();
+    assert_eq!(actual_text_spans(&content), vec!["欢迎".to_string(), "欢迎".to_string(), "欢迎".to_string()], "{content}");
+    assert_eq!(pcjp_name_count(&doc, 0), 2_001, "nothing replaced");
+    // Updating an item swaps its fonts; deleting it removes them.
+    update_content(&mut doc, 0, 0, &Content::Text(AddedText { text: "你好".into(), ..t })).unwrap();
+    assert_eq!(pcjp_name_count(&doc, 0), 2_001, "the replaced item's font is gone");
+    delete_content(&mut doc, 0, 0).unwrap();
+    assert_eq!(pcjp_name_count(&doc, 0), 2_000, "only the page's own names are left");
+    reopen(&doc);
+    // A Latin word breaks as one, not letter by letter.
+    let mut doc = fixture();
+    let t = AddedText { rect: [72.0, 600.0, 100.0, 700.0], text: "欢迎Pdf".into(), size: 14.0, ..AddedText::default() };
+    add_content(&mut doc, 0, &Content::Text(t)).unwrap();
+    let obj = list_added(&doc).iter().find(|a| a.page == 0).unwrap().obj;
+    let content = String::from_utf8_lossy(&stream_bytes(&doc, &Object::Ref(obj)).unwrap()).into_owned();
+    assert_eq!(actual_text_spans(&content), vec!["欢迎".to_string(), "Pdf".to_string()], "{content}");
+}
+
+/// What CJK text is refused: a character no face draws, whether there are no faces at all or
+/// every face lacks it (the rare ideographs). Simplified-only code points the Japanese faces
+/// lack are drawn, by the Hans face.
+#[test]
+fn cjk_first_undrawable_follows_the_faces() {
+    let text = |s: &str| AddedText { rect: [72.0, 600.0, 300.0, 700.0], text: s.into(), ..AddedText::default() };
+    if pdfcraft_fonts::document_japanese_font().is_none() {
+        assert_eq!(first_undrawable(&text("你好")), Some('你'));
+        return;
+    }
+    assert_eq!(first_undrawable(&text("你好")), None);
+    assert_eq!(first_undrawable(&text("欢迎")), None, "the Hans face stands in for 欢");
+    let missing = cjk_char_no_face_draws();
+    assert_eq!(first_undrawable(&text(&format!("你好{missing}"))), Some(missing));
+    // What's left of a CJK item after its CJK is drawn still has to be drawable.
+    assert_eq!(first_undrawable(&text("你好\r")), Some('\r'));
+}
+
 #[test]
 fn odd_arabic_text_never_panics() {
     let mut doc = fixture();
@@ -1735,6 +1889,18 @@ fn rewriting_japanese_twice_keeps_only_the_fallback_fonts_it_shows() {
     assert!(after.iter().all(|(name, _)| content.contains(&format!("/{} ", String::from_utf8_lossy(name)))), "{content}");
 }
 
+/// The first CJK character that no face in the Type 3 chain draws: the chain is `type3_faces`' —
+/// the Japanese faces, then the Chinese (Hans) one, which covers the Simplified-only code points
+/// they lack, so what's left is the rare ideographs.
+fn cjk_char_no_face_draws() -> char {
+    let faces: Vec<_> =
+        pdfcraft_fonts::document_japanese_fonts_for_style(false, false).into_iter().chain(pdfcraft_fonts::ui_chinese_fonts()).collect();
+    (0x4E00u32..0xA000)
+        .filter_map(char::from_u32)
+        .find(|ch| faces.iter().all(|face| pdfcraft_fonts::japanese_glyph_from(face, *ch).is_err()))
+        .expect("some CJK character is outside every face")
+}
+
 /// The page's Type 3 fallback fonts (`PCJp`, `PCJp1`, ...) by resource name.
 fn fallback_fonts(doc: &Document) -> Vec<(Vec<u8>, Dict)> {
     let p = pdfcraft_model::pages(doc).swap_remove(0);
@@ -1995,11 +2161,7 @@ fn japanese_replacement_missing_a_glyph_after_240_changes_nothing() {
         return;
     }
     // The first CJK character that no face draws: the 242nd unique character, in a second font.
-    let faces = pdfcraft_fonts::document_japanese_fonts_for_style(false, false);
-    let missing = (0x4E00u32..0x9FFF)
-        .filter_map(char::from_u32)
-        .find(|ch| faces.iter().all(|face| pdfcraft_fonts::japanese_glyph_from(face, *ch).is_err()))
-        .expect("some CJK character is outside every face");
+    let missing = cjk_char_no_face_draws();
     let replacement = format!("{}{missing}", covered_japanese_chars(241));
     let mut doc = text_page("BT /F2 12 Tf 72 700 Td (ab) Tj ET");
     let saved = write_incremental(&doc, &SaveOptions::default()).unwrap();
@@ -3712,9 +3874,6 @@ fn header_and_watermark_drawability_matches_what_applying_refuses() {
 fn page_text_the_standard_fonts_cant_draw_is_refused() {
     let mut doc = fixture();
     let before: Vec<Vec<String>> = (0..3).map(|p| streams(&reopen(&doc), p)).collect();
-    let text = AddedText { rect: [72.0, 600.0, 300.0, 700.0], text: "日本語のテキスト".into(), ..AddedText::default() };
-    let err = add_content(&mut doc, 0, &Content::Text(text)).unwrap_err().to_string();
-    assert!(err.contains("\"日\" (U+65E5)"), "{err}");
     let hf = HeaderFooter {
         text: ["Ελληνικά".into(), String::new(), String::new(), String::new(), String::new(), String::new()],
         ..HeaderFooter::default()
@@ -3724,14 +3883,28 @@ fn page_text_the_standard_fonts_cant_draw_is_refused() {
     assert!(add_watermark(&mut doc, &[0], &wm, true).unwrap_err().to_string().contains("U+673A"));
     let after: Vec<Vec<String>> = (0..3).map(|p| streams(&reopen(&doc), p)).collect();
     assert_eq!(before, after, "a refused edit changes nothing");
+    // CJK added text is drawn with the Type 3 fallback a replacement's retyped text uses when the
+    // craft-fonts faces are built in; without them it's refused instead of written as `?` (#125).
+    // Headers and watermarks write with their own standard-font writer, so theirs stays refused.
+    let text = AddedText { rect: [72.0, 600.0, 300.0, 700.0], text: "日本語のテキスト".into(), ..AddedText::default() };
+    if pdfcraft_fonts::document_japanese_font().is_some() {
+        add_content(&mut doc, 0, &Content::Text(text)).unwrap();
+    } else {
+        let err = add_content(&mut doc, 0, &Content::Text(text)).unwrap_err().to_string();
+        assert!(err.contains("\"日\" (U+65E5)"), "{err}");
+    }
     // Western European text, including what only WinAnsi (not Latin-1) has, still works.
     let text = AddedText { rect: [72.0, 600.0, 300.0, 700.0], text: "Café — 5€ ™".into(), ..AddedText::default() };
-    add_content(&mut doc, 0, &Content::Text(text.clone())).unwrap();
+    let n = add_content(&mut doc, 0, &Content::Text(text.clone())).unwrap();
     // Retyping existing text is refused the same way, and the whole document is left as it was.
     let saved = write_incremental(&doc, &SaveOptions::default()).unwrap();
     let retyped = AddedText { text: "Café 中".into(), ..text.clone() };
-    assert!(update_content(&mut doc, 0, 0, &Content::Text(retyped)).unwrap_err().to_string().contains("U+4E2D"));
-    assert_eq!(write_incremental(&doc, &SaveOptions::default()).unwrap(), saved, "a refused update changes nothing");
+    if pdfcraft_fonts::document_japanese_font().is_some() {
+        update_content(&mut doc, 0, n, &Content::Text(retyped)).unwrap();
+    } else {
+        assert!(update_content(&mut doc, 0, n, &Content::Text(retyped)).unwrap_err().to_string().contains("U+4E2D"));
+        assert_eq!(write_incremental(&doc, &SaveOptions::default()).unwrap(), saved, "a refused update changes nothing");
+    }
     // A carriage return is checked where it would be drawn: added text splits on LF only, so
     // CRLF would leave a `?`; headers and watermarks split CRLF into lines, but not a lone CR.
     let crlf = AddedText { text: "A\r\nB".into(), ..text };

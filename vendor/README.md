@@ -66,6 +66,24 @@ Later rendering errors, device loss, and non-winit renderer construction are unc
 
 Stencil masks filled with a pattern (#2975): `hayro`'s renderer paints a pattern-filled stencil mask with the fill (non-stroking) paint. It passed `is_stroke = true`, so an uncoloured tiling pattern was drawn in its stroke colour (black by default) instead of the colour given with `scn`. Covered by `raster::tests::stencil_masks_are_drawn_at_the_fill_opacity_once` (the uncoloured tiling pattern case).
 
+winit OHOS backend (ohos-craft-p2): merged in from the egui-repo winit fork (branch `ohos`,
+upstream-0.30.13 base, merge commit `b513f15`; since byte-synced to the fork's fmt-only `53e300c`,
+PdfCraft commit `507763a6`) for HarmonyOS (`aarch64-unknown-linux-ohos`,
+`target_env = "ohos"`): `Cargo.toml` gains a `cfg(target_env = "ohos")` dependency table
+(`openharmony-ability` at the vendored sibling `../openharmony-ability/crates/ability`,
+`ohos-xcomponent-binding`, `ohos-hilog-binding`) and the desktop-unix dependency clauses
+(calloop, sctk, wayland-*, x11*, ...) now exclude `target_env = "ohos"`; `build.rs` adds the
+`ohos_platform` alias and excludes it from `free_unix`; `src/platform/ohos.rs` and
+`src/platform_impl/ohos/` (event loop, event pump, input translation, keycodes, window) are the
+backend proper, carrying their own on-device test suite (48 lib tests via the fork's
+hdc-test-runner channel). All thirteen desktop patches above are untouched — their footprint
+(`platform_impl/{linux,macos,windows}`) is disjoint from the merge paths. The fork's
+repo-local infrastructure (`.cargo/`, `ndk/`, `rust-toolchain`, clippy/rustfmt configs, the empty
+`[workspace]` boundary table) is deliberately not carried; PdfCraft's `exclude = ["vendor"]`
+serves the boundary role. Host semantics are unchanged (the backend compiles only under
+`target_env = "ohos"`); `cargo check -p pdfcraft` on the host stays green. Not for upstream:
+the OHOS backend is an egui-fork concern (see `ohos-spike/P2_NOTES.md` in the egui repo).
+
 Temporary: hayro is the bootstrap renderer and lopdf the bootstrap inspector (ADR-0004); M2.6 replaces them with our own devices and `cos`/`model`.
 
 TIFF predictor decoding: hayro-syntax aligns the output writer to a byte boundary after each

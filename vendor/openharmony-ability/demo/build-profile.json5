@@ -1,0 +1,79 @@
+{
+  "app": {
+    // PdfCraft vendor sanitization (ohos-craft-p2 task 7.2): the upstream
+    // ohdev checkout ships this demo build-profile with the maintainer's
+    // materialized local auto-sign block (DevEco-materialized secrets and
+    // machine-local material paths). The vendor copy strips it per this
+    // repo's signing discipline — the only deliberate deviation from the
+    // ohdev @ 01440bb working-tree state (documented in egui-repo
+    // P2_NOTES 7.x). The demo app is not part of any PdfCraft build; to run
+    // it, restore the block from the upstream repository or auto-sign
+    // locally in DevEco Studio.
+    "products": [
+      {
+        "name": "default",
+        "compatibleSdkVersion": "5.0.0(12)",
+        "targetSdkVersion": "5.0.0(12)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true,
+          },
+        },
+      },
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release",
+      },
+    ],
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": ["default"],
+        },
+      ],
+    },
+    {
+      "name": "native_ability",
+      "srcPath": "../native_ability",
+    },
+    {
+      "name": "plugin_app_control",
+      "srcPath": "../plugins/app-control",
+    },
+    {
+      "name": "plugin_permission",
+      "srcPath": "../plugins/permission",
+    },
+    {
+      "name": "plugin_resource",
+      "srcPath": "../plugins/resource",
+    },
+    {
+      "name": "plugin_webview",
+      "srcPath": "../plugins/webview",
+    },
+    {
+      "name": "plugin_window",
+      "srcPath": "../plugins/window",
+    },
+    {
+      "name": "plugin_url",
+      "srcPath": "../plugins/url",
+    },
+    {
+      "name": "plugin_files",
+      "srcPath": "../plugins/files",
+    },
+  ],
+}

@@ -537,6 +537,9 @@ fn detect_system_lang() -> Lang {
 thread_local! {
     // Per thread, as in PhotoCraft: independent app and test threads (kittest harnesses run in
     // parallel) must not change each other's drawing language.
+    // clippy 1.95 flags this as needing const initialization, but the initializer is already
+    // const (`const { Cell::new(Lang::EN) }`) — a false positive.
+    #[allow(clippy::missing_const_for_thread_local)]
     static CURRENT: Cell<Lang> = const { Cell::new(Lang::EN) };
 }
 

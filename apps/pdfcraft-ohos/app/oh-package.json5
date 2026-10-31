@@ -1,0 +1,6 @@
+{
+  "modelVersion": "5.0.3",
+  "description": "pdfcraft-ohos: minimal ArkTS shell hosting the PdfCraft egui app (ohos-craft-p2).",
+  "dependencies": {},
+  "devDependencies": {}
+}

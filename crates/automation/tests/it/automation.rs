@@ -5608,11 +5608,14 @@ fn comment_checkmarks_locks_hiding_and_summaries_through_tools() {
 /// them) and the result's `warnings` names the character; a form also asks other viewers to
 /// redraw it. Where the `?` would be permanent the tool refuses: a typed signature, a redaction's
 /// overlay text, a new document from text, and flattening what PdfCraft drew with `?`. A comment
-/// summary that quotes such text writes it as [U+XXXX].
+/// summary that quotes such text writes it as [U+XXXX]. With craft-fonts, a comment's own text (a
+/// text box, Fill & Sign text) is drawn with the Type 3 fallback every viewer renders, so those
+/// two say nothing; the rest stands on the standard fonts either way.
 #[test]
 fn text_the_standard_fonts_cannot_draw_is_never_silent_through_tools() {
     let dir = workdir("undrawable");
     let mut a = auto(&dir);
+    let fonts = pdfcraft_fonts::document_japanese_font().is_some();
     let doc = ok(&mut a, "doc_open", json!({ "path": "a.pdf" }))["doc"].as_u64().unwrap();
     let refused = |a: &mut Automation, tool: &str, args: Value, ch: &str| match a.call(tool, &args) {
         Err(ToolError::Failed(e) | ToolError::InvalidArgs(e)) => assert!(e.contains(ch), "{tool}: {e}"),
@@ -5632,11 +5635,20 @@ fn text_the_standard_fonts_cannot_draw_is_never_silent_through_tools() {
     assert_eq!(fields["fields"][0]["value"], "张三", "{fields}");
     let out = ok(&mut a, "form_add_field", json!({ "doc": doc, "page": 1, "type": "button", "rect": [20, 60, 120, 82], "caption": "提交" }));
     warned(&out, &["\"提\" (U+63D0)"]);
-    // Comments and Fill & Sign text: kept, and said.
+    // Comments and Fill & Sign text: kept, and said. With craft-fonts the fallback draws them,
+    // so the result carries no warning at all.
     let out = ok(&mut a, "comment_add", json!({ "doc": doc, "page": 1, "type": "textbox", "rect": [10, 200, 190, 240], "contents": "欢迎" }));
-    warned(&out, &["a comment on page 1", "\"欢\" (U+6B22)", "every viewer"]);
+    if fonts {
+        assert!(out.get("warnings").is_none(), "{out}");
+    } else {
+        warned(&out, &["a comment on page 1", "\"欢\" (U+6B22)", "every viewer"]);
+    }
     let out = ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": 1, "type": "text", "at": [20, 300], "text": "签名" }));
-    warned(&out, &["U+7B7E"]);
+    if fonts {
+        assert!(out.get("warnings").is_none(), "{out}");
+    } else {
+        warned(&out, &["U+7B7E"]);
+    }
     // A sticky note draws an icon, not its text: nothing to say.
     let out = ok(&mut a, "comment_add", json!({ "doc": doc, "page": 1, "type": "note", "at": [40, 40], "contents": "签名 OK", "author": "Ada" }));
     assert!(out.get("warnings").is_none(), "{out}");

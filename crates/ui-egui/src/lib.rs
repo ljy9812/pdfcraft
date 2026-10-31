@@ -11,6 +11,16 @@
 
 use crate::control::Host as _;
 
+// ohos face: rfd 0.17 has no OpenHarmony backend — the local no-op stub
+// (vendor/rfd-ohos) is consumed under its own dependency key and aliased
+// here to the `rfd` name, so every `use rfd::…` call site compiles
+// unmodified (ohos-craft-p2 G1; picks resolve to None + log). Cargo
+// requires a single canonical source per dependency key across targets,
+// so the swap cannot live in the manifest alone. Host/wasm faces keep the
+// real crate from the extern prelude; this line is compiled out for them.
+#[cfg(target_env = "ohos")]
+extern crate rfd_ohos as rfd;
+
 /// Whether `a` and `b` name the same file: equal, or equal once made absolute against the
 /// current directory (links are not resolved, as in `last_session`).
 pub(crate) fn same_file(a: &str, b: &str) -> bool {

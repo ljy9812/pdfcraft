@@ -982,7 +982,14 @@ pub struct InnerSizeWriter {
 }
 
 impl InnerSizeWriter {
-    #[cfg(not(orbital_platform))]
+    // OHOS fork: p4 restores the `ohos_platform` exclusion. p3 had removed it on
+    // the mistaken premise that `WindowEvent::Resized` uses this constructor —
+    // it never did; every caller assembles `ScaleFactorChanged`, which the OHOS
+    // backend does not emit (`scale_factor()` is a live query, DECISIONS.md G5
+    // / 8.4). Same cfg-narrowing form as the neighboring `orbital_platform`
+    // exclusion; host and other platforms compile identically
+    // (OHOS_FORK_NOTES.md, backport item 1).
+    #[cfg(not(any(orbital_platform, ohos_platform)))]
     pub(crate) fn new(new_inner_size: Weak<Mutex<PhysicalSize<u32>>>) -> Self {
         Self { new_inner_size }
     }
