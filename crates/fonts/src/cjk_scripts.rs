@@ -13,6 +13,13 @@ pub const MAX_OTHER_CJK_BYTES: u64 = 4 << 20;
 pub const NATIVE_UI_CJK_FAMILIES: [&str; 1] = ["LXGW WenKai Lite"];
 pub const MAX_NATIVE_UI_CJK_BYTES: u64 = 16 << 20;
 
+/// Reviewed wasm UI fallback: the Simplified Chinese interface face the web build embeds so the
+/// zh UI renders instead of tofu (the browser has no system-font fallback to lean on). It is over
+/// the general cap by design (~4.4 MiB), bounded by its own limit; the web build stays within the
+/// 25 MiB hosting limit with it embedded.
+pub const WEB_UI_CJK_FAMILIES: [&str; 1] = ["WenQuanYi Micro Hei"];
+pub const MAX_WEB_UI_CJK_BYTES: u64 = 8 << 20;
+
 /// ISO 15924 codes of the Han, Japanese and Korean scripts, Hangul on its own included.
 const CJK_SCRIPTS: [&str; 6] = ["Hani", "Hans", "Hant", "Jpan", "Kore", "Hang"];
 
@@ -43,7 +50,13 @@ pub enum CjkSizeDecision {
 
 /// The size cap that applies to `family` in this build.
 pub fn cjk_cap_bytes(family: &str, wasm: bool) -> u64 {
-    if !wasm && NATIVE_UI_CJK_FAMILIES.contains(&family) { MAX_NATIVE_UI_CJK_BYTES } else { MAX_OTHER_CJK_BYTES }
+    if wasm && WEB_UI_CJK_FAMILIES.contains(&family) {
+        MAX_WEB_UI_CJK_BYTES
+    } else if !wasm && NATIVE_UI_CJK_FAMILIES.contains(&family) {
+        MAX_NATIVE_UI_CJK_BYTES
+    } else {
+        MAX_OTHER_CJK_BYTES
+    }
 }
 
 /// Decide whether a CJK face is embedded, skipped, or rejected.
@@ -93,5 +106,20 @@ mod tests {
         assert_eq!(cjk_size_decision("BIZ UDPGothic", u64::MAX, false, true), CjkSizeDecision::Embed);
         assert_eq!(cjk_cap_bytes("LXGW WenKai Lite", false), MAX_NATIVE_UI_CJK_BYTES);
         assert_eq!(cjk_cap_bytes("LXGW WenKai Lite", true), MAX_OTHER_CJK_BYTES);
+    }
+
+    /// Regression test: the WenQuanYi Micro Hei face is ~4.4 MiB, over the general cap, and the
+    /// web build must still embed it (the zh web UI renders from it; before its own wasm cap it
+    /// was silently skipped and the interface fell back to tofu). Native builds keep skipping it:
+    /// the native UI face comes from the separate Chinese manifest instead.
+    #[test]
+    fn the_wenquanyi_web_ui_face_embeds_on_wasm_within_its_own_cap() {
+        let wqy = 4_625_912;
+        assert_eq!(cjk_size_decision("WenQuanYi Micro Hei", wqy, true, false), CjkSizeDecision::Embed);
+        assert_eq!(cjk_size_decision("WenQuanYi Micro Hei", MAX_WEB_UI_CJK_BYTES, true, true), CjkSizeDecision::Embed);
+        assert_eq!(cjk_size_decision("WenQuanYi Micro Hei", MAX_WEB_UI_CJK_BYTES + 1, true, true), CjkSizeDecision::Reject);
+        assert_eq!(cjk_size_decision("WenQuanYi Micro Hei", wqy, false, false), CjkSizeDecision::Skip);
+        assert_eq!(cjk_cap_bytes("WenQuanYi Micro Hei", true), MAX_WEB_UI_CJK_BYTES);
+        assert_eq!(cjk_cap_bytes("WenQuanYi Micro Hei", false), MAX_OTHER_CJK_BYTES);
     }
 }
